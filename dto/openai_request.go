@@ -279,8 +279,8 @@ type Message struct {
 	Content          any             `json:"content"`
 	Name             *string         `json:"name,omitempty"`
 	Prefix           *bool           `json:"prefix,omitempty"`
-	ReasoningContent string          `json:"reasoning_content,omitempty"`
-	Reasoning        string          `json:"reasoning,omitempty"`
+	ReasoningContent *string         `json:"reasoning_content,omitempty"`
+	Reasoning        *string         `json:"reasoning,omitempty"`
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 	ToolCallId       string          `json:"tool_call_id,omitempty"`
 	parsedContent    []MediaContent
@@ -431,6 +431,16 @@ const (
 	//ContentTypeAudioUrl   = "audio_url"
 )
 
+func (m *Message) GetReasoningContent() string {
+	if m.ReasoningContent == nil && m.Reasoning == nil {
+		return ""
+	}
+	if m.ReasoningContent != nil {
+		return *m.ReasoningContent
+	}
+	return *m.Reasoning
+}
+
 func (m *Message) GetPrefix() bool {
 	if m.Prefix == nil {
 		return false
@@ -447,14 +457,14 @@ func (m *Message) ParseToolCalls() []ToolCallRequest {
 		return nil
 	}
 	var toolCalls []ToolCallRequest
-	if err := json.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
+	if err := common.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
 		return toolCalls
 	}
 	return toolCalls
 }
 
 func (m *Message) SetToolCalls(toolCalls any) {
-	toolCallsJson, _ := json.Marshal(toolCalls)
+	toolCallsJson, _ := common.Marshal(toolCalls)
 	m.ToolCalls = toolCallsJson
 }
 
