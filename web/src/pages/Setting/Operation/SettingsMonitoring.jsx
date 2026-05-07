@@ -30,21 +30,38 @@ import {
 import { useTranslation } from 'react-i18next';
 import HttpStatusCodeRulesInput from '../../../components/settings/HttpStatusCodeRulesInput';
 
+const secretOptionKeys = new Set([
+  'monitor_setting.request_failure_webhook_secret',
+  'monitor_setting.channel_disabled_webhook_secret',
+]);
+
+const defaultMonitoringInputs = {
+  ChannelDisableThreshold: '',
+  QuotaRemindThreshold: '',
+  AutomaticDisableChannelEnabled: false,
+  AutomaticEnableChannelEnabled: false,
+  AutomaticDisableKeywords: '',
+  AutomaticDisableStatusCodes: '401',
+  AutomaticRetryStatusCodes:
+    '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
+  'monitor_setting.channel_failure_rate_disable_enabled': false,
+  'monitor_setting.channel_failure_rate_window_minutes': 5,
+  'monitor_setting.channel_failure_rate_threshold': 50,
+  'monitor_setting.channel_failure_rate_min_requests': 20,
+  'monitor_setting.request_failure_webhook_enabled': false,
+  'monitor_setting.request_failure_webhook_url': '',
+  'monitor_setting.request_failure_webhook_secret': '',
+  'monitor_setting.channel_disabled_webhook_enabled': false,
+  'monitor_setting.channel_disabled_webhook_url': '',
+  'monitor_setting.channel_disabled_webhook_secret': '',
+  'monitor_setting.auto_test_channel_enabled': false,
+  'monitor_setting.auto_test_channel_minutes': 10,
+};
+
 export default function SettingsMonitoring(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const [inputs, setInputs] = useState({
-    ChannelDisableThreshold: '',
-    QuotaRemindThreshold: '',
-    AutomaticDisableChannelEnabled: false,
-    AutomaticEnableChannelEnabled: false,
-    AutomaticDisableKeywords: '',
-    AutomaticDisableStatusCodes: '401',
-    AutomaticRetryStatusCodes:
-      '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
-    'monitor_setting.auto_test_channel_enabled': false,
-    'monitor_setting.auto_test_channel_minutes': 10,
-  });
+  const [inputs, setInputs] = useState(defaultMonitoringInputs);
   const refForm = useRef();
   const [inputsRow, setInputsRow] = useState(inputs);
   const parsedAutoDisableStatusCodes = parseHttpStatusCodeRules(
@@ -55,7 +72,9 @@ export default function SettingsMonitoring(props) {
   );
 
   function onSubmit() {
-    const updateArray = compareObjects(inputs, inputsRow);
+    const updateArray = compareObjects(inputs, inputsRow).filter(
+      (item) => !(secretOptionKeys.has(item.key) && !inputs[item.key]),
+    );
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
     if (!parsedAutoDisableStatusCodes.ok) {
       const details =
@@ -72,6 +91,10 @@ export default function SettingsMonitoring(props) {
           ? `: ${parsedAutoRetryStatusCodes.invalidTokens.join(', ')}`
           : '';
       return showError(`${t('自动重试状态码格式不正确')}${details}`);
+    }
+    const webhookValidation = validateWebhookSettings();
+    if (webhookValidation) {
+      return showError(webhookValidation);
     }
     const requestQueue = updateArray.map((item) => {
       let value = '';
@@ -109,10 +132,38 @@ export default function SettingsMonitoring(props) {
       });
   }
 
+  function validateWebhookSettings() {
+    const configs = [
+      {
+        enabledKey: 'monitor_setting.request_failure_webhook_enabled',
+        urlKey: 'monitor_setting.request_failure_webhook_url',
+        label: t('请求失败 Webhook 地址'),
+      },
+      {
+        enabledKey: 'monitor_setting.channel_disabled_webhook_enabled',
+        urlKey: 'monitor_setting.channel_disabled_webhook_url',
+        label: t('渠道禁用 Webhook 地址'),
+      },
+    ];
+    for (const config of configs) {
+      if (!inputs[config.enabledKey]) {
+        continue;
+      }
+      const rawUrl = String(inputs[config.urlKey] || '').trim();
+      if (rawUrl === '') {
+        return `${config.label}${t('不能为空')}`;
+      }
+      if (!rawUrl.startsWith('https://')) {
+        return `${config.label}${t('必须以https://开头')}`;
+      }
+    }
+    return '';
+  }
+
   useEffect(() => {
-    const currentInputs = {};
+    const currentInputs = { ...defaultMonitoringInputs };
     for (let key in props.options) {
-      if (Object.keys(inputs).includes(key)) {
+      if (Object.keys(defaultMonitoringInputs).includes(key)) {
         currentInputs[key] = props.options[key];
       }
     }
@@ -235,6 +286,182 @@ export default function SettingsMonitoring(props) {
                 />
               </Col>
             </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.channel_failure_rate_disable_enabled'}
+                  label={t('按失败率自动禁用渠道')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  extraText={t(
+                    '窗口内请求数达到最小样本数，且失败率达到阈值后自动禁用渠道',
+                  )}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.channel_failure_rate_disable_enabled':
+                        value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            {inputs['monitor_setting.channel_failure_rate_disable_enabled'] && (
+              <Row gutter={16}>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('失败率统计窗口')}
+                    step={1}
+                    min={1}
+                    suffix={t('分钟')}
+                    field={
+                      'monitor_setting.channel_failure_rate_window_minutes'
+                    }
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_failure_rate_window_minutes':
+                          String(value),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('失败率阈值')}
+                    step={1}
+                    min={1}
+                    max={100}
+                    suffix={'%'}
+                    field={'monitor_setting.channel_failure_rate_threshold'}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_failure_rate_threshold':
+                          String(value),
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                  <Form.InputNumber
+                    label={t('最小请求数')}
+                    step={1}
+                    min={1}
+                    field={'monitor_setting.channel_failure_rate_min_requests'}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_failure_rate_min_requests':
+                          String(value),
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            )}
+            <Row gutter={16}>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.request_failure_webhook_enabled'}
+                  label={t('请求失败 Webhook')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.request_failure_webhook_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.channel_disabled_webhook_enabled'}
+                  label={t('渠道禁用 Webhook')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.channel_disabled_webhook_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            {inputs['monitor_setting.request_failure_webhook_enabled'] && (
+              <Row gutter={16}>
+                <Col xs={24} sm={12}>
+                  <Form.Input
+                    field={'monitor_setting.request_failure_webhook_url'}
+                    label={t('请求失败 Webhook 地址')}
+                    placeholder={t(
+                      '请输入Webhook地址，例如: https://example.com/webhook',
+                    )}
+                    extraText={t('每次上游请求失败都会异步发送通知')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.request_failure_webhook_url': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Form.Input
+                    field={'monitor_setting.request_failure_webhook_secret'}
+                    label={t('请求失败 Webhook 密钥')}
+                    placeholder={t('留空表示不修改')}
+                    mode='password'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.request_failure_webhook_secret': value,
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            )}
+            {inputs['monitor_setting.channel_disabled_webhook_enabled'] && (
+              <Row gutter={16}>
+                <Col xs={24} sm={12}>
+                  <Form.Input
+                    field={'monitor_setting.channel_disabled_webhook_url'}
+                    label={t('渠道禁用 Webhook 地址')}
+                    placeholder={t(
+                      '请输入Webhook地址，例如: https://example.com/webhook',
+                    )}
+                    extraText={t('渠道被自动禁用后会异步发送通知')}
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_disabled_webhook_url': value,
+                      })
+                    }
+                  />
+                </Col>
+                <Col xs={24} sm={12}>
+                  <Form.Input
+                    field={'monitor_setting.channel_disabled_webhook_secret'}
+                    label={t('渠道禁用 Webhook 密钥')}
+                    placeholder={t('留空表示不修改')}
+                    mode='password'
+                    onChange={(value) =>
+                      setInputs({
+                        ...inputs,
+                        'monitor_setting.channel_disabled_webhook_secret':
+                          value,
+                      })
+                    }
+                  />
+                </Col>
+              </Row>
+            )}
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <HttpStatusCodeRulesInput
