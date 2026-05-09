@@ -28,6 +28,8 @@ const ChannelsTabs = ({
   setActiveTypeKey,
   channelTypeCounts,
   availableTypeKeys,
+  archiveCount,
+  archivedTabKey,
   loadChannels,
   activePage,
   pageSize,
@@ -66,8 +68,25 @@ const ChannelsTabs = ({
         }
       />
 
-      {CHANNEL_OPTIONS.filter((opt) =>
-        availableTypeKeys.includes(String(opt.value)),
+      <TabPane
+        itemKey={archivedTabKey}
+        tab={
+          <span className='flex items-center gap-2'>
+            {t('归档')}
+            <Tag
+              color={activeTypeKey === archivedTabKey ? 'red' : 'grey'}
+              shape='circle'
+            >
+              {archiveCount || 0}
+            </Tag>
+          </span>
+        }
+      />
+
+      {CHANNEL_OPTIONS.filter(
+        (opt) =>
+          activeTypeKey !== archivedTabKey &&
+          availableTypeKeys.includes(String(opt.value)),
       ).map((option) => {
         const key = String(option.value);
         const count = channelTypeCounts[option.value] || 0;

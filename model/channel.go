@@ -25,6 +25,7 @@ type Channel struct {
 	OpenAIOrganization *string `json:"openai_organization"`
 	TestModel          *string `json:"test_model"`
 	Status             int     `json:"status" gorm:"default:1"`
+	Archived           bool    `json:"archived" gorm:"default:false;index"`
 	Name               string  `json:"name" gorm:"index"`
 	Weight             *uint   `json:"weight" gorm:"default:0"`
 	CreatedTime        int64   `json:"created_time" gorm:"bigint"`
@@ -225,12 +226,16 @@ func (channel *Channel) GetOtherInfo() map[string]interface{} {
 }
 
 func (channel *Channel) SetOtherInfo(otherInfo map[string]interface{}) {
-	otherInfoBytes, err := json.Marshal(otherInfo)
+	otherInfoBytes, err := common.Marshal(otherInfo)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to marshal other info: channel_id=%d, tag=%s, name=%s, error=%v", channel.Id, channel.GetTag(), channel.Name, err))
 		return
 	}
 	channel.OtherInfo = string(otherInfoBytes)
+}
+
+func (channel *Channel) IsEnabled() bool {
+	return channel != nil && channel.Status == common.ChannelStatusEnabled && !channel.Archived
 }
 
 func (channel *Channel) GetTag() string {
@@ -288,13 +293,25 @@ func withNonEmptyTagCondition(query *gorm.DB) *gorm.DB {
 	return query.Where("tag IS NOT NULL AND tag != ?", "")
 }
 
+func withArchivedCondition(query *gorm.DB, archived bool) *gorm.DB {
+	return query.Where("archived = ?", archived)
+}
+
+func withUnarchivedCondition(query *gorm.DB) *gorm.DB {
+	return withArchivedCondition(query, false)
+}
+
 func GetChannelsByTag(tag string, idSort bool, selectAll bool) ([]*Channel, error) {
+	return GetChannelsByTagWithArchive(tag, idSort, selectAll, false)
+}
+
+func GetChannelsByTagWithArchive(tag string, idSort bool, selectAll bool, archived bool) ([]*Channel, error) {
 	var channels []*Channel
 	order := "priority desc"
 	if idSort {
 		order = "id desc"
 	}
-	query := withTagCondition(DB.Preload("VendorProfile"), tag).Order(order)
+	query := withArchivedCondition(withTagCondition(DB.Preload("VendorProfile"), tag), archived).Order(order)
 	if !selectAll {
 		query = query.Omit("key")
 	}
@@ -303,6 +320,10 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool) ([]*Channel, erro
 }
 
 func SearchChannels(keyword string, group string, model string, idSort bool) ([]*Channel, error) {
+	return SearchChannelsWithArchive(keyword, group, model, idSort, false)
+}
+
+func SearchChannelsWithArchive(keyword string, group string, model string, idSort bool, archived bool) ([]*Channel, error) {
 	var channels []*Channel
 	modelsCol := "`models`"
 
@@ -323,7 +344,7 @@ func SearchChannels(keyword string, group string, model string, idSort bool) ([]
 	}
 
 	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Preload("VendorProfile").Omit("key")
+	baseQuery := withArchivedCondition(DB.Model(&Channel{}).Preload("VendorProfile").Omit("key"), archived)
 
 	// 构造WHERE子句
 	var whereClause string
@@ -636,13 +657,19 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			pollingLock.Lock()
 			// 如果是多Key模式，更新缓存中的状态
 			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+			if status == common.ChannelStatusEnabled {
+				channelCache.Archived = false
+			}
 			pollingLock.Unlock()
 			//CacheUpdateChannel(channelCache)
 			//return true
 		} else {
 			// 如果缓存渠道存在，且状态已是目标状态，直接返回
-			if channelCache.Status == status {
+			if channelCache.Status == status && (status != common.ChannelStatusEnabled || !channelCache.Archived) {
 				return false
+			}
+			if status == common.ChannelStatusEnabled {
+				channelCache.Archived = false
 			}
 			CacheUpdateChannelStatus(channelId, status)
 		}
@@ -661,18 +688,22 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	if err != nil {
 		return false
 	} else {
-		if channel.Status == status {
+		if channel.Status == status && (status != common.ChannelStatusEnabled || !channel.Archived) {
 			return false
 		}
 
 		if channel.ChannelInfo.IsMultiKey {
 			beforeStatus := channel.Status
+			beforeArchived := channel.Archived
 			// Protect map writes with the same per-channel lock used by readers
 			pollingLock := GetChannelPollingLock(channelId)
 			pollingLock.Lock()
 			handlerMultiKeyUpdate(channel, usingKey, status, reason)
+			if status == common.ChannelStatusEnabled && channel.Archived {
+				channel.Archived = false
+			}
 			pollingLock.Unlock()
-			if beforeStatus != channel.Status {
+			if beforeStatus != channel.Status || beforeArchived != channel.Archived {
 				shouldUpdateAbilities = true
 			}
 		} else {
@@ -681,6 +712,9 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			info["status_time"] = common.GetTimestamp()
 			channel.SetOtherInfo(info)
 			channel.Status = status
+			if status == common.ChannelStatusEnabled {
+				channel.Archived = false
+			}
 			shouldUpdateAbilities = true
 		}
 		err = channel.SaveWithoutKey()
@@ -693,7 +727,7 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 }
 
 func EnableChannelByTag(tag string) error {
-	err := withTagCondition(DB.Model(&Channel{}), tag).Update("status", common.ChannelStatusEnabled).Error
+	err := withUnarchivedCondition(withTagCondition(DB.Model(&Channel{}), tag)).Update("status", common.ChannelStatusEnabled).Error
 	if err != nil {
 		return err
 	}
@@ -702,7 +736,7 @@ func EnableChannelByTag(tag string) error {
 }
 
 func DisableChannelByTag(tag string) error {
-	err := withTagCondition(DB.Model(&Channel{}), tag).Update("status", common.ChannelStatusManuallyDisabled).Error
+	err := withUnarchivedCondition(withTagCondition(DB.Model(&Channel{}), tag)).Update("status", common.ChannelStatusManuallyDisabled).Error
 	if err != nil {
 		return err
 	}
@@ -743,7 +777,7 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.HeaderOverride = headerOverride
 	}
 
-	err := withTagCondition(DB.Model(&Channel{}), tag).Updates(updateData).Error
+	err := withUnarchivedCondition(withTagCondition(DB.Model(&Channel{}), tag)).Updates(updateData).Error
 	if err != nil {
 		return err
 	}
@@ -787,18 +821,22 @@ func DeleteChannelByStatus(status int64) (int64, error) {
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
+	result := DB.Where("archived = ? AND (status = ? or status = ?)", false, common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
 	return result.RowsAffected, result.Error
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {
+	return GetPaginatedTagsWithArchive(offset, limit, false)
+}
+
+func GetPaginatedTagsWithArchive(offset int, limit int, archived bool) ([]*string, error) {
 	if limit <= 0 {
 		return []*string{}, nil
 	}
 
 	tags := make([]*string, 0, limit)
 	var noTagCount int64
-	if err := withTagCondition(DB.Model(&Channel{}), "").Count(&noTagCount).Error; err != nil {
+	if err := withArchivedCondition(withTagCondition(DB.Model(&Channel{}), ""), archived).Count(&noTagCount).Error; err != nil {
 		return nil, err
 	}
 	if noTagCount > 0 {
@@ -814,7 +852,7 @@ func GetPaginatedTags(offset int, limit int) ([]*string, error) {
 	}
 
 	var nonEmptyTags []*string
-	err := withNonEmptyTagCondition(DB.Model(&Channel{}).Select("DISTINCT tag")).
+	err := withNonEmptyTagCondition(withArchivedCondition(DB.Model(&Channel{}).Select("DISTINCT tag"), archived)).
 		Offset(offset).
 		Limit(limit).
 		Find(&nonEmptyTags).Error
@@ -822,6 +860,10 @@ func GetPaginatedTags(offset int, limit int) ([]*string, error) {
 }
 
 func SearchTags(keyword string, group string, model string, idSort bool) ([]*string, error) {
+	return SearchTagsWithArchive(keyword, group, model, idSort, false)
+}
+
+func SearchTagsWithArchive(keyword string, group string, model string, idSort bool, archived bool) ([]*string, error) {
 	var tags []*string
 	modelsCol := "`models`"
 
@@ -860,7 +902,7 @@ func SearchTags(keyword string, group string, model string, idSort bool) ([]*str
 	}
 
 	matchingQuery := func() *gorm.DB {
-		return DB.Model(&Channel{}).Omit("key").Where(whereClause, args...)
+		return withArchivedCondition(DB.Model(&Channel{}).Omit("key").Where(whereClause, args...), archived)
 	}
 
 	var noTagCount int64
@@ -1013,14 +1055,18 @@ func CountAllChannels() (int64, error) {
 
 // CountAllTags returns distinct tag groups, including one group for untagged channels.
 func CountAllTags() (int64, error) {
+	return CountAllTagsWithArchive(false)
+}
+
+func CountAllTagsWithArchive(archived bool) (int64, error) {
 	var total int64
-	err := withNonEmptyTagCondition(DB.Model(&Channel{})).Distinct("tag").Count(&total).Error
+	err := withNonEmptyTagCondition(withArchivedCondition(DB.Model(&Channel{}), archived)).Distinct("tag").Count(&total).Error
 	if err != nil {
 		return total, err
 	}
 
 	var noTagCount int64
-	err = withTagCondition(DB.Model(&Channel{}), "").Count(&noTagCount).Error
+	err = withArchivedCondition(withTagCondition(DB.Model(&Channel{}), ""), archived).Count(&noTagCount).Error
 	if err != nil {
 		return total, err
 	}
@@ -1064,4 +1110,80 @@ func CountChannelsGroupByType() (map[int64]int64, error) {
 		counts[r.Type] = r.Count
 	}
 	return counts, nil
+}
+
+func SetChannelArchived(id int, archived bool) (*Channel, error) {
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
+	}
+
+	channel := &Channel{}
+	if err := tx.First(channel, "id = ?", id).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	updates := map[string]interface{}{
+		"archived": archived,
+	}
+	channel.Archived = archived
+	if archived {
+		updates["status"] = common.ChannelStatusManuallyDisabled
+		channel.Status = common.ChannelStatusManuallyDisabled
+	}
+
+	if err := tx.Model(&Channel{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	if err := channel.UpdateAbilities(tx); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	return channel, tx.Commit().Error
+}
+
+func BatchSetChannelsArchived(ids []int, archived bool) (int, error) {
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return 0, tx.Error
+	}
+
+	updated := 0
+	for _, chunk := range lo.Chunk(ids, 100) {
+		var channels []*Channel
+		if err := tx.Where("id IN ?", chunk).Find(&channels).Error; err != nil {
+			tx.Rollback()
+			return updated, err
+		}
+		for _, channel := range channels {
+			if channel == nil {
+				continue
+			}
+			updates := map[string]interface{}{
+				"archived": archived,
+			}
+			channel.Archived = archived
+			if archived {
+				updates["status"] = common.ChannelStatusManuallyDisabled
+				channel.Status = common.ChannelStatusManuallyDisabled
+			}
+			if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Updates(updates).Error; err != nil {
+				tx.Rollback()
+				return updated, err
+			}
+			if err := channel.UpdateAbilities(tx); err != nil {
+				tx.Rollback()
+				return updated, err
+			}
+			updated++
+		}
+	}
+
+	return updated, tx.Commit().Error
 }

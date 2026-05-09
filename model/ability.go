@@ -33,7 +33,7 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 	err := DB.Table("abilities").
 		Select("abilities.*, channels.type as channel_type").
 		Joins("left join channels on abilities.channel_id = channels.id").
-		Where("abilities.enabled = ?", true).
+		Where("abilities.enabled = ? AND channels.archived = ?", true, false).
 		Scan(&abilities).Error
 	return abilities, err
 }
@@ -140,6 +140,9 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 		return nil, nil
 	}
 	err = DB.First(&channel, "id = ?", channel.Id).Error
+	if err == nil && !channel.IsEnabled() {
+		return nil, nil
+	}
 	return &channel, err
 }
 
@@ -159,7 +162,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.IsEnabled(),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
@@ -231,7 +234,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.IsEnabled(),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
@@ -265,7 +268,8 @@ func UpdateAbilityStatus(channelId int, status bool) error {
 }
 
 func UpdateAbilityStatusByTag(tag string, status bool) error {
-	return withTagCondition(DB.Model(&Ability{}), tag).Select("enabled").Update("enabled", status).Error
+	channelQuery := withUnarchivedCondition(withTagCondition(DB.Model(&Channel{}).Select("id"), tag))
+	return DB.Model(&Ability{}).Where("channel_id IN (?)", channelQuery).Select("enabled").Update("enabled", status).Error
 }
 
 func UpdateAbilityByTag(tag string, newTag *string, priority *int64, weight *uint) error {
@@ -279,7 +283,8 @@ func UpdateAbilityByTag(tag string, newTag *string, priority *int64, weight *uin
 	if weight != nil {
 		ability.Weight = *weight
 	}
-	return withTagCondition(DB.Model(&Ability{}), tag).Updates(ability).Error
+	channelQuery := withUnarchivedCondition(withTagCondition(DB.Model(&Channel{}).Select("id"), tag))
+	return DB.Model(&Ability{}).Where("channel_id IN (?)", channelQuery).Updates(ability).Error
 }
 
 var fixLock = sync.Mutex{}

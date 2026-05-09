@@ -31,6 +31,8 @@ import CompactModeToggle from '../../common/ui/CompactModeToggle';
 const ChannelsActions = ({
   enableBatchDelete,
   batchDeleteChannels,
+  batchArchiveChannels,
+  batchUnarchiveChannels,
   setShowBatchSetTag,
   testAllChannels,
   fixChannelsAbilities,
@@ -54,11 +56,14 @@ const ChannelsActions = ({
   loadChannels,
   searchChannels,
   activeTypeKey,
+  archivedTabKey,
   activePage,
   pageSize,
   setActivePage,
   t,
 }) => {
+  const isArchiveTab = activeTypeKey === archivedTabKey;
+
   return (
     <div className='flex flex-col gap-2'>
       {/* 第一行：批量操作按钮 + 设置开关 */}
@@ -89,6 +94,29 @@ const ChannelsActions = ({
             className='w-full md:w-auto'
           >
             {t('批量设置标签')}
+          </Button>
+
+          <Button
+            size='small'
+            disabled={!enableBatchDelete}
+            type='tertiary'
+            className='w-full md:w-auto'
+            onClick={() => {
+              Modal.confirm({
+                title: isArchiveTab
+                  ? t('确定要取消归档所选渠道？')
+                  : t('确定要归档所选渠道？'),
+                content: isArchiveTab
+                  ? t('取消归档后渠道会回到普通列表，但不会自动启用。')
+                  : t('归档后渠道会被自动禁用，并且只在归档 tab 中显示。'),
+                onOk: () =>
+                  isArchiveTab
+                    ? batchUnarchiveChannels()
+                    : batchArchiveChannels(),
+              });
+            }}
+          >
+            {isArchiveTab ? t('取消归档所选渠道') : t('归档所选渠道')}
           </Button>
 
           <Dropdown

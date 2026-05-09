@@ -17,10 +17,20 @@ func setupChannelTagTestDB(t *testing.T) {
 	oldUsingSQLite := common.UsingSQLite
 	oldUsingMySQL := common.UsingMySQL
 	oldUsingPostgreSQL := common.UsingPostgreSQL
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
+	oldCommonGroupCol := commonGroupCol
+	oldCommonKeyCol := commonKeyCol
+	oldCommonTrueVal := commonTrueVal
+	oldCommonFalseVal := commonFalseVal
 
 	common.UsingSQLite = true
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
+	common.MemoryCacheEnabled = false
+	commonGroupCol = "`group`"
+	commonKeyCol = "`key`"
+	commonTrueVal = "1"
+	commonFalseVal = "0"
 
 	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -40,6 +50,11 @@ func setupChannelTagTestDB(t *testing.T) {
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
 		common.UsingPostgreSQL = oldUsingPostgreSQL
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
+		commonGroupCol = oldCommonGroupCol
+		commonKeyCol = oldCommonKeyCol
+		commonTrueVal = oldCommonTrueVal
+		commonFalseVal = oldCommonFalseVal
 		sqlDB, err := db.DB()
 		if err == nil {
 			_ = sqlDB.Close()
@@ -102,5 +117,75 @@ func TestTagAggregationIncludesUntaggedChannels(t *testing.T) {
 	}
 	if disabled != 2 {
 		t.Fatalf("expected two disabled untagged channels, got %d", disabled)
+	}
+}
+
+func TestArchivedChannelIsHiddenFromRuntimeSelection(t *testing.T) {
+	setupChannelTagTestDB(t)
+
+	active := Channel{
+		Name:   "active",
+		Key:    "key-active",
+		Models: "gpt-test",
+		Group:  "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	if err := active.Insert(); err != nil {
+		t.Fatalf("failed to insert active channel: %v", err)
+	}
+
+	archived := Channel{
+		Name:     "archived",
+		Key:      "key-archived",
+		Models:   "gpt-test",
+		Group:    "default",
+		Status:   common.ChannelStatusEnabled,
+		Archived: true,
+	}
+	if err := archived.Insert(); err != nil {
+		t.Fatalf("failed to insert archived channel: %v", err)
+	}
+
+	var archivedAbility Ability
+	if err := DB.First(&archivedAbility, "channel_id = ?", archived.Id).Error; err != nil {
+		t.Fatalf("failed to load archived ability: %v", err)
+	}
+	if archivedAbility.Enabled {
+		t.Fatal("expected archived channel ability to be disabled")
+	}
+
+	selected, err := GetChannel("default", "gpt-test", 0)
+	if err != nil {
+		t.Fatalf("failed to select channel: %v", err)
+	}
+	if selected == nil || selected.Id != active.Id {
+		t.Fatalf("expected active channel to be selected, got %#v", selected)
+	}
+
+	archivedActive, err := SetChannelArchived(active.Id, true)
+	if err != nil {
+		t.Fatalf("failed to archive active channel: %v", err)
+	}
+	if !archivedActive.Archived || archivedActive.Status != common.ChannelStatusManuallyDisabled {
+		t.Fatalf("expected archive to mark channel archived and disabled, got archived=%v status=%d", archivedActive.Archived, archivedActive.Status)
+	}
+
+	selected, err = GetChannel("default", "gpt-test", 0)
+	if err != nil {
+		t.Fatalf("failed to select after archiving: %v", err)
+	}
+	if selected != nil {
+		t.Fatalf("expected no selectable channel after archiving all channels, got %#v", selected)
+	}
+
+	if !UpdateChannelStatus(active.Id, "", common.ChannelStatusEnabled, "") {
+		t.Fatal("expected enabling archived channel to update status")
+	}
+	var reenabled Channel
+	if err := DB.First(&reenabled, "id = ?", active.Id).Error; err != nil {
+		t.Fatalf("failed to reload reenabled channel: %v", err)
+	}
+	if reenabled.Archived || reenabled.Status != common.ChannelStatusEnabled {
+		t.Fatalf("expected enable to unarchive channel, got archived=%v status=%d", reenabled.Archived, reenabled.Status)
 	}
 }

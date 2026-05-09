@@ -62,6 +62,10 @@ func parseStatusFilter(statusParam string) int {
 	}
 }
 
+func parseArchiveFilter(c *gin.Context) bool {
+	return strings.EqualFold(c.Query("archived"), "true")
+}
+
 func clearChannelInfo(channel *model.Channel) {
 	if channel.ChannelInfo.IsMultiKey {
 		channel.ChannelInfo.MultiKeyDisabledReason = nil
@@ -77,6 +81,7 @@ func GetAllChannels(c *gin.Context) {
 	statusParam := c.Query("status")
 	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
 	statusFilter := parseStatusFilter(statusParam)
+	archivedFilter := parseArchiveFilter(c)
 	// type filter
 	typeStr := c.Query("type")
 	typeFilter := -1
@@ -89,7 +94,7 @@ func GetAllChannels(c *gin.Context) {
 	var total int64
 
 	if enableTagMode {
-		tags, err := model.GetPaginatedTags(pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+		tags, err := model.GetPaginatedTagsWithArchive(pageInfo.GetStartIdx(), pageInfo.GetPageSize(), archivedFilter)
 		if err != nil {
 			common.SysError("failed to get paginated tags: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取标签失败，请稍后重试"})
@@ -99,7 +104,7 @@ func GetAllChannels(c *gin.Context) {
 			if tag == nil {
 				continue
 			}
-			tagChannels, err := model.GetChannelsByTag(*tag, idSort, false)
+			tagChannels, err := model.GetChannelsByTagWithArchive(*tag, idSort, false, archivedFilter)
 			if err != nil {
 				continue
 			}
@@ -118,9 +123,9 @@ func GetAllChannels(c *gin.Context) {
 			}
 			channelData = append(channelData, filtered...)
 		}
-		total, _ = model.CountAllTags()
+		total, _ = model.CountAllTagsWithArchive(archivedFilter)
 	} else {
-		baseQuery := model.DB.Model(&model.Channel{})
+		baseQuery := model.DB.Model(&model.Channel{}).Where("archived = ?", archivedFilter)
 		if typeFilter >= 0 {
 			baseQuery = baseQuery.Where("type = ?", typeFilter)
 		}
@@ -149,7 +154,7 @@ func GetAllChannels(c *gin.Context) {
 		clearChannelInfo(datum)
 	}
 
-	countQuery := model.DB.Model(&model.Channel{})
+	countQuery := model.DB.Model(&model.Channel{}).Where("archived = ?", false)
 	if statusFilter == common.ChannelStatusEnabled {
 		countQuery = countQuery.Where("status = ?", common.ChannelStatusEnabled)
 	} else if statusFilter == 0 {
@@ -164,12 +169,21 @@ func GetAllChannels(c *gin.Context) {
 	for _, r := range results {
 		typeCounts[r.Type] = r.Count
 	}
+	var archivedCount int64
+	archiveCountQuery := model.DB.Model(&model.Channel{}).Where("archived = ?", true)
+	if statusFilter == common.ChannelStatusEnabled {
+		archiveCountQuery = archiveCountQuery.Where("status = ?", common.ChannelStatusEnabled)
+	} else if statusFilter == 0 {
+		archiveCountQuery = archiveCountQuery.Where("status != ?", common.ChannelStatusEnabled)
+	}
+	_ = archiveCountQuery.Count(&archivedCount).Error
 	common.ApiSuccess(c, gin.H{
-		"items":       channelData,
-		"total":       total,
-		"page":        pageInfo.GetPage(),
-		"page_size":   pageInfo.GetPageSize(),
-		"type_counts": typeCounts,
+		"items":          channelData,
+		"total":          total,
+		"page":           pageInfo.GetPage(),
+		"page_size":      pageInfo.GetPageSize(),
+		"type_counts":    typeCounts,
+		"archived_count": archivedCount,
 	})
 	return
 }
@@ -252,11 +266,12 @@ func SearchChannels(c *gin.Context) {
 	modelKeyword := c.Query("model")
 	statusParam := c.Query("status")
 	statusFilter := parseStatusFilter(statusParam)
+	archivedFilter := parseArchiveFilter(c)
 	idSort, _ := strconv.ParseBool(c.Query("id_sort"))
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	channelData := make([]*model.Channel, 0)
 	if enableTagMode {
-		tags, err := model.SearchTags(keyword, group, modelKeyword, idSort)
+		tags, err := model.SearchTagsWithArchive(keyword, group, modelKeyword, idSort, archivedFilter)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -268,13 +283,13 @@ func SearchChannels(c *gin.Context) {
 			if tag == nil {
 				continue
 			}
-			tagChannel, err := model.GetChannelsByTag(*tag, idSort, false)
+			tagChannel, err := model.GetChannelsByTagWithArchive(*tag, idSort, false, archivedFilter)
 			if err == nil {
 				channelData = append(channelData, tagChannel...)
 			}
 		}
 	} else {
-		channels, err := model.SearchChannels(keyword, group, modelKeyword, idSort)
+		channels, err := model.SearchChannelsWithArchive(keyword, group, modelKeyword, idSort, archivedFilter)
 		if err != nil {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
@@ -315,6 +330,14 @@ func SearchChannels(c *gin.Context) {
 	for _, channel := range channelData {
 		typeCounts[int64(channel.Type)]++
 	}
+	var archivedCount int64
+	archiveCountQuery := model.DB.Model(&model.Channel{}).Where("archived = ?", true)
+	if statusFilter == common.ChannelStatusEnabled {
+		archiveCountQuery = archiveCountQuery.Where("status = ?", common.ChannelStatusEnabled)
+	} else if statusFilter == 0 {
+		archiveCountQuery = archiveCountQuery.Where("status != ?", common.ChannelStatusEnabled)
+	}
+	_ = archiveCountQuery.Count(&archivedCount).Error
 
 	typeParam := c.Query("type")
 	typeFilter := -1
@@ -363,9 +386,10 @@ func SearchChannels(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data": gin.H{
-			"items":       pagedData,
-			"total":       total,
-			"type_counts": typeCounts,
+			"items":          pagedData,
+			"total":          total,
+			"type_counts":    typeCounts,
+			"archived_count": archivedCount,
 		},
 	})
 	return
@@ -656,7 +680,7 @@ func getVertexArrayKeys(keys string) ([]string, error) {
 		case string:
 			keyStr = strings.TrimSpace(v)
 		default:
-			bytes, err := json.Marshal(v)
+			bytes, err := common.Marshal(v)
 			if err != nil {
 				return nil, fmt.Errorf("Vertex AI key JSON 编码失败: %w", err)
 			}
@@ -787,6 +811,42 @@ func DeleteDisabledChannel(c *gin.Context) {
 		"data":    rows,
 	})
 	return
+}
+
+func ArchiveChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.SetChannelArchived(id, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	service.ResetProxyClientCache()
+	channel.Key = ""
+	clearChannelInfo(channel)
+	common.ApiSuccess(c, channel)
+}
+
+func UnarchiveChannel(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.SetChannelArchived(id, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	service.ResetProxyClientCache()
+	channel.Key = ""
+	clearChannelInfo(channel)
+	common.ApiSuccess(c, channel)
 }
 
 type ChannelTag struct {
@@ -928,6 +988,54 @@ func DeleteChannelBatch(c *gin.Context) {
 	return
 }
 
+func ArchiveChannelBatch(c *gin.Context) {
+	channelBatch := ChannelBatch{}
+	err := c.ShouldBindJSON(&channelBatch)
+	if err != nil || len(channelBatch.Ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "参数错误",
+		})
+		return
+	}
+	count, err := model.BatchSetChannelsArchived(channelBatch.Ids, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	service.ResetProxyClientCache()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    count,
+	})
+}
+
+func UnarchiveChannelBatch(c *gin.Context) {
+	channelBatch := ChannelBatch{}
+	err := c.ShouldBindJSON(&channelBatch)
+	if err != nil || len(channelBatch.Ids) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "参数错误",
+		})
+		return
+	}
+	count, err := model.BatchSetChannelsArchived(channelBatch.Ids, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	model.InitChannelCache()
+	service.ResetProxyClientCache()
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    count,
+	})
+}
+
 type PatchChannel struct {
 	model.Channel
 	MultiKeyMode *string `json:"multi_key_mode"`
@@ -948,6 +1056,20 @@ func UpdateChannel(c *gin.Context) {
 	var raw map[string]interface{}
 	_ = common.Unmarshal(body, &raw)
 	_, vendorProfileProvided := raw["vendor_profile_id"]
+	statusProvided := false
+	enableArchivedChannel := false
+	if rawStatus, ok := raw["status"]; ok {
+		statusProvided = true
+		switch v := rawStatus.(type) {
+		case float64:
+			enableArchivedChannel = int(v) == common.ChannelStatusEnabled
+		case int:
+			enableArchivedChannel = v == common.ChannelStatusEnabled
+		case string:
+			parsed, _ := strconv.Atoi(v)
+			enableArchivedChannel = parsed == common.ChannelStatusEnabled
+		}
+	}
 
 	// 使用统一的校验函数
 	if err := validateChannel(&channel.Channel, false); err != nil {
@@ -969,6 +1091,14 @@ func UpdateChannel(c *gin.Context) {
 
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
+	channel.Archived = originChannel.Archived
+	if originChannel.Archived && statusProvided && enableArchivedChannel {
+		channel.Archived = false
+		if _, err := model.SetChannelArchived(channel.Id, false); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 
 	// If the request explicitly specifies a new MultiKeyMode, apply it on top of the original info.
 	if channel.MultiKeyMode != nil && *channel.MultiKeyMode != "" {
@@ -988,7 +1118,7 @@ func UpdateChannel(c *gin.Context) {
 				if strings.HasPrefix(strings.TrimSpace(originChannel.Key), "[") {
 					// JSON数组格式
 					var arr []json.RawMessage
-					if err := json.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
+					if err := common.Unmarshal([]byte(strings.TrimSpace(originChannel.Key)), &arr); err == nil {
 						existingKeys = make([]string, len(arr))
 						for i, v := range arr {
 							existingKeys[i] = string(v)
@@ -1180,7 +1310,7 @@ func FetchModels(c *gin.Context) {
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+	if err := common.DecodeJson(response.Body, &result); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"success": false,
 			"message": err.Error(),
@@ -1926,7 +2056,7 @@ func OllamaPullModelStream(c *gin.Context) {
 
 	// 创建进度回调函数
 	progressCallback := func(progress ollama.OllamaPullResponse) {
-		data, _ := json.Marshal(progress)
+		data, _ := common.Marshal(progress)
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(data))
 		c.Writer.Flush()
 	}
@@ -1935,12 +2065,12 @@ func OllamaPullModelStream(c *gin.Context) {
 	err = ollama.PullOllamaModelStream(baseURL, key, req.ModelName, progressCallback)
 
 	if err != nil {
-		errorData, _ := json.Marshal(gin.H{
+		errorData, _ := common.Marshal(gin.H{
 			"error": err.Error(),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(errorData))
 	} else {
-		successData, _ := json.Marshal(gin.H{
+		successData, _ := common.Marshal(gin.H{
 			"message": fmt.Sprintf("Model %s pulled successfully", req.ModelName),
 		})
 		fmt.Fprintf(c.Writer, "data: %s\n\n", string(successData))

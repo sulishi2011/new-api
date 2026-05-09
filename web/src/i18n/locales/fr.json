@@ -3643,6 +3643,24 @@
     "默认折叠侧边栏": "Réduire la barre latérale par défaut",
     "默认测试模型": "Modèle de test par défaut",
     "默认用户消息": "Bonjour",
-    "默认补全倍率": "Taux de complétion par défaut"
+    "默认补全倍率": "Taux de complétion par défaut",
+    "归档": "Archivé",
+    "已归档": "Archivé",
+    "归档所选渠道": "Archiver les canaux sélectionnés",
+    "取消归档所选渠道": "Désarchiver les canaux sélectionnés",
+    "确定要归档所选渠道？": "Archiver les canaux sélectionnés ?",
+    "确定要取消归档所选渠道？": "Désarchiver les canaux sélectionnés ?",
+    "归档后渠道会被自动禁用，并且只在归档 tab 中显示。": "Les canaux archivés sont automatiquement désactivés et visibles uniquement dans l’onglet Archives.",
+    "取消归档后渠道会回到普通列表，但不会自动启用。": "Après désarchivage, le canal revient dans la liste normale mais n’est pas activé automatiquement.",
+    "请先选择要归档的渠道！": "Veuillez d’abord sélectionner les canaux à archiver !",
+    "请先选择要取消归档的渠道！": "Veuillez d’abord sélectionner les canaux à désarchiver !",
+    "已归档 ${data} 个渠道！": "${data} canaux archivés !",
+    "已取消归档 ${data} 个渠道！": "${data} canaux désarchivés !",
+    "取消归档": "Désarchiver",
+    "确定要取消归档此渠道？": "Désarchiver ce canal ?",
+    "确定要归档此渠道？": "Archiver ce canal ?",
+    "归档渠道不会参与调度，启用后会自动移出归档。": "Les canaux archivés ne sont pas routés ; les activer les retire automatiquement des archives.",
+    "确认启用归档渠道？": "Activer le canal archivé ?",
+    "启用后该渠道会自动移出归档分类，并重新参与调度。": "Après activation, ce canal quitte automatiquement les archives et participe de nouveau au routage."
   }
 }

@@ -41,6 +41,7 @@ import { Modal, Button } from '@douyinfe/semi-ui';
 import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
 
 const CHANNEL_TIMEOUT_DEFAULTS_OPTION_KEY = 'ChannelTimeoutDefaults';
+const CHANNEL_ARCHIVED_TAB_KEY = 'archived';
 
 const parseChannelTimeoutDefaults = (rawValue) => {
   if (typeof rawValue !== 'string' || rawValue.trim() === '') {
@@ -126,6 +127,7 @@ export const useChannelsData = () => {
   // Type tabs states
   const [activeTypeKey, setActiveTypeKey] = useState('all');
   const [typeCounts, setTypeCounts] = useState({});
+  const [archiveCount, setArchiveCount] = useState(0);
 
   // Model test states
   const [showModelTestModal, setShowModelTestModal] = useState(false);
@@ -426,10 +428,13 @@ export const useChannelsData = () => {
 
     const reqId = ++requestCounter.current;
     setLoading(true);
-    const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
+    const archiveView = typeKey === CHANNEL_ARCHIVED_TAB_KEY;
+    const typeParam =
+      typeKey !== 'all' && !archiveView ? `&type=${typeKey}` : '';
     const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+    const archiveParam = archiveView ? '&archived=true' : '&archived=false';
     const res = await API.get(
-      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}`,
+      `/api/channel/?p=${page}&page_size=${pageSize}&id_sort=${idSort}&tag_mode=${enableTagMode}${typeParam}${statusParam}${archiveParam}`,
     );
 
     if (res === undefined || reqId !== requestCounter.current) {
@@ -438,13 +443,25 @@ export const useChannelsData = () => {
 
     const { success, message, data } = res.data;
     if (success) {
-      const { items, total, type_counts } = data;
+      const { items, total, type_counts, archived_count } = data;
+      setArchiveCount(archived_count || 0);
       if (type_counts) {
         const sumAll = Object.values(type_counts).reduce(
           (acc, v) => acc + v,
           0,
         );
-        setTypeCounts({ ...type_counts, all: sumAll });
+        setTypeCounts((prev) =>
+          archiveView
+            ? {
+                ...prev,
+                [CHANNEL_ARCHIVED_TAB_KEY]: archived_count || 0,
+              }
+            : {
+                ...type_counts,
+                all: sumAll,
+                [CHANNEL_ARCHIVED_TAB_KEY]: archived_count || 0,
+              },
+        );
       }
       setChannelFormat(items, enableTagMode);
       setChannelCount(total);
@@ -485,21 +502,42 @@ export const useChannelsData = () => {
       }
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
+      const archiveView = typeKey === CHANNEL_ARCHIVED_TAB_KEY;
+      const normalizedTypeParam =
+        typeKey !== 'all' && !archiveView ? typeParam : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+      const archiveParam = archiveView ? '&archived=true' : '&archived=false';
       const vendorProfileParam = vendorProfileId
         ? `&vendor_profile_id=${vendorProfileId}`
         : '';
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}${vendorProfileParam}`,
+        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${normalizedTypeParam}${statusParam}${vendorProfileParam}${archiveParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
-        const { items = [], total = 0, type_counts = {} } = data;
+        const {
+          items = [],
+          total = 0,
+          type_counts = {},
+          archived_count = 0,
+        } = data;
+        setArchiveCount(archived_count);
         const sumAll = Object.values(type_counts).reduce(
           (acc, v) => acc + v,
           0,
         );
-        setTypeCounts({ ...type_counts, all: sumAll });
+        setTypeCounts((prev) =>
+          archiveView
+            ? {
+                ...prev,
+                [CHANNEL_ARCHIVED_TAB_KEY]: archived_count,
+              }
+            : {
+                ...type_counts,
+                all: sumAll,
+                [CHANNEL_ARCHIVED_TAB_KEY]: archived_count,
+              },
+        );
         setChannelFormat(items, enableTagMode);
         setChannelCount(total);
         setActivePage(page);
@@ -540,6 +578,7 @@ export const useChannelsData = () => {
   const manageChannel = async (id, action, record, value) => {
     let data = { id };
     let res;
+    const wasArchived = record?.archived === true;
     switch (action) {
       case 'delete':
         res = await API.delete(`/api/channel/${id}/`);
@@ -563,6 +602,12 @@ export const useChannelsData = () => {
         if (data.weight < 0) data.weight = 0;
         res = await API.put('/api/channel/', data);
         break;
+      case 'archive':
+        res = await API.post(`/api/channel/${id}/archive`);
+        break;
+      case 'unarchive':
+        res = await API.post(`/api/channel/${id}/unarchive`);
+        break;
       case 'enable_all':
         data.channel_info = record.channel_info;
         data.channel_info.multi_key_status_list = {};
@@ -576,8 +621,16 @@ export const useChannelsData = () => {
       let newChannels = [...channels];
       if (action !== 'delete') {
         record.status = channel.status;
+        record.archived = channel.archived;
       }
       setChannels(newChannels);
+      if (
+        action === 'archive' ||
+        action === 'unarchive' ||
+        (action === 'enable' && wasArchived)
+      ) {
+        await refresh();
+      }
     } else {
       showError(message);
     }
@@ -834,6 +887,42 @@ export const useChannelsData = () => {
           refresh(activePage - 1);
         }
       }, 100);
+    } else {
+      showError(message);
+    }
+    setLoading(false);
+  };
+
+  const batchArchiveChannels = async () => {
+    if (selectedChannels.length === 0) {
+      showError(t('请先选择要归档的渠道！'));
+      return;
+    }
+    setLoading(true);
+    const ids = selectedChannels.map((channel) => channel.id);
+    const res = await API.post('/api/channel/batch/archive', { ids });
+    const { success, message, data } = res.data;
+    if (success) {
+      showSuccess(t('已归档 ${data} 个渠道！').replace('${data}', data));
+      await refresh();
+    } else {
+      showError(message);
+    }
+    setLoading(false);
+  };
+
+  const batchUnarchiveChannels = async () => {
+    if (selectedChannels.length === 0) {
+      showError(t('请先选择要取消归档的渠道！'));
+      return;
+    }
+    setLoading(true);
+    const ids = selectedChannels.map((channel) => channel.id);
+    const res = await API.post('/api/channel/batch/unarchive', { ids });
+    const { success, message, data } = res.data;
+    if (success) {
+      showSuccess(t('已取消归档 ${data} 个渠道！').replace('${data}', data));
+      await refresh();
     } else {
       showError(message);
     }
@@ -1230,7 +1319,12 @@ export const useChannelsData = () => {
 
   // Type counts
   const channelTypeCounts = useMemo(() => {
-    if (Object.keys(typeCounts).length > 0) return typeCounts;
+    if (Object.keys(typeCounts).length > 0) {
+      return {
+        ...typeCounts,
+        [CHANNEL_ARCHIVED_TAB_KEY]: archiveCount,
+      };
+    }
     const counts = { all: channels.length };
     channels.forEach((channel) => {
       const collect = (ch) => {
@@ -1243,13 +1337,16 @@ export const useChannelsData = () => {
         collect(channel);
       }
     });
+    counts[CHANNEL_ARCHIVED_TAB_KEY] = archiveCount;
     return counts;
-  }, [typeCounts, channels]);
+  }, [typeCounts, channels, archiveCount]);
 
   const availableTypeKeys = useMemo(() => {
     const keys = ['all'];
     Object.entries(channelTypeCounts).forEach(([k, v]) => {
-      if (k !== 'all' && v > 0) keys.push(String(k));
+      if (k !== 'all' && k !== CHANNEL_ARCHIVED_TAB_KEY && v > 0) {
+        keys.push(String(k));
+      }
     });
     return keys;
   }, [channelTypeCounts]);
@@ -1303,6 +1400,8 @@ export const useChannelsData = () => {
     typeCounts,
     channelTypeCounts,
     availableTypeKeys,
+    archiveCount,
+    archivedTabKey: CHANNEL_ARCHIVED_TAB_KEY,
 
     // Model test states
     showModelTestModal,
@@ -1355,6 +1454,8 @@ export const useChannelsData = () => {
     handleRow,
     batchSetChannelTag,
     batchDeleteChannels,
+    batchArchiveChannels,
+    batchUnarchiveChannels,
     testAllChannels,
     deleteAllDisabledChannels,
     updateAllChannelsBalance,

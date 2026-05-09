@@ -4177,6 +4177,24 @@
     "默认折叠侧边栏": "Mặc định thu gọn thanh bên",
     "默认测试模型": "Mô hình kiểm tra mặc định",
     "默认用户消息": "Xin chào",
-    "默认补全倍率": "Tỷ lệ hoàn thành mặc định"
+    "默认补全倍率": "Tỷ lệ hoàn thành mặc định",
+    "归档": "Lưu trữ",
+    "已归档": "Đã lưu trữ",
+    "归档所选渠道": "Lưu trữ kênh đã chọn",
+    "取消归档所选渠道": "Bỏ lưu trữ kênh đã chọn",
+    "确定要归档所选渠道？": "Lưu trữ các kênh đã chọn?",
+    "确定要取消归档所选渠道？": "Bỏ lưu trữ các kênh đã chọn?",
+    "归档后渠道会被自动禁用，并且只在归档 tab 中显示。": "Kênh đã lưu trữ sẽ tự động bị tắt và chỉ hiển thị trong tab Lưu trữ.",
+    "取消归档后渠道会回到普通列表，但不会自动启用。": "Sau khi bỏ lưu trữ, kênh sẽ quay lại danh sách thường nhưng không tự động bật.",
+    "请先选择要归档的渠道！": "Vui lòng chọn kênh cần lưu trữ trước!",
+    "请先选择要取消归档的渠道！": "Vui lòng chọn kênh cần bỏ lưu trữ trước!",
+    "已归档 ${data} 个渠道！": "Đã lưu trữ ${data} kênh!",
+    "已取消归档 ${data} 个渠道！": "Đã bỏ lưu trữ ${data} kênh!",
+    "取消归档": "Bỏ lưu trữ",
+    "确定要取消归档此渠道？": "Bỏ lưu trữ kênh này?",
+    "确定要归档此渠道？": "Lưu trữ kênh này?",
+    "归档渠道不会参与调度，启用后会自动移出归档。": "Kênh đã lưu trữ không tham gia điều phối; khi bật sẽ tự động rời khỏi lưu trữ.",
+    "确认启用归档渠道？": "Bật kênh đã lưu trữ?",
+    "启用后该渠道会自动移出归档分类，并重新参与调度。": "Sau khi bật, kênh này sẽ tự động rời khỏi lưu trữ và tham gia điều phối lại."
   }
 }

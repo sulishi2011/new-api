@@ -3788,6 +3788,24 @@
     "见上方动态计费详情": "See dynamic pricing details above",
     "含时间条件": "Time rules",
     "含请求条件": "Request rules",
-    "（当前仅支持易支付接口，默认使用上方服务器地址作为回调地址！）": "(Currently only supports Epay interface, the default callback address is the server address above!)"
+    "（当前仅支持易支付接口，默认使用上方服务器地址作为回调地址！）": "(Currently only supports Epay interface, the default callback address is the server address above!)",
+    "归档": "Archived",
+    "已归档": "Archived",
+    "归档所选渠道": "Archive selected channels",
+    "取消归档所选渠道": "Unarchive selected channels",
+    "确定要归档所选渠道？": "Archive the selected channels?",
+    "确定要取消归档所选渠道？": "Unarchive the selected channels?",
+    "归档后渠道会被自动禁用，并且只在归档 tab 中显示。": "Archived channels are disabled automatically and shown only in the Archived tab.",
+    "取消归档后渠道会回到普通列表，但不会自动启用。": "After unarchiving, the channel returns to the normal list but is not enabled automatically.",
+    "请先选择要归档的渠道！": "Please select channels to archive first!",
+    "请先选择要取消归档的渠道！": "Please select channels to unarchive first!",
+    "已归档 ${data} 个渠道！": "Archived ${data} channels!",
+    "已取消归档 ${data} 个渠道！": "Unarchived ${data} channels!",
+    "取消归档": "Unarchive",
+    "确定要取消归档此渠道？": "Unarchive this channel?",
+    "确定要归档此渠道？": "Archive this channel?",
+    "归档渠道不会参与调度，启用后会自动移出归档。": "Archived channels are not routed; enabling one removes it from archive automatically.",
+    "确认启用归档渠道？": "Enable archived channel?",
+    "启用后该渠道会自动移出归档分类，并重新参与调度。": "After enabling, this channel leaves archive automatically and is routed again."
   }
 }

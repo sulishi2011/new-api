@@ -39,7 +39,7 @@ func InitChannelCache() {
 		newGroup2model2channels[group] = make(map[string][]int)
 	}
 	for _, channel := range channels {
-		if channel.Status != common.ChannelStatusEnabled {
+		if !channel.IsEnabled() {
 			continue // skip disabled channels
 		}
 		groups := strings.Split(channel.Group, ",")
@@ -234,6 +234,9 @@ func CacheUpdateChannelStatus(id int, status int) {
 	defer channelSyncLock.Unlock()
 	if channel, ok := channelsIDM[id]; ok {
 		channel.Status = status
+		if status == common.ChannelStatusEnabled {
+			channel.Archived = false
+		}
 	}
 	if status != common.ChannelStatusEnabled {
 		// delete the channel from group2model2channels

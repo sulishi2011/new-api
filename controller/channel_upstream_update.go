@@ -542,7 +542,7 @@ func runChannelUpstreamModelUpdateTaskOnce() {
 		var channels []*model.Channel
 		query := model.DB.
 			Select(channelUpstreamModelUpdateSelectFields).
-			Where("status = ?", common.ChannelStatusEnabled).
+			Where("status = ? AND archived = ?", common.ChannelStatusEnabled, false).
 			Order("id asc").
 			Limit(channelUpstreamModelUpdateTaskBatchSize)
 		if lastID > 0 {
@@ -835,7 +835,7 @@ func findEnabledChannelsAfterID(lastID int, batchSize int) ([]*model.Channel, er
 	var channels []*model.Channel
 	query := model.DB.
 		Select(channelUpstreamModelUpdateSelectFields).
-		Where("status = ?", common.ChannelStatusEnabled).
+		Where("status = ? AND archived = ?", common.ChannelStatusEnabled, false).
 		Order("id asc").
 		Limit(batchSize)
 	if lastID > 0 {

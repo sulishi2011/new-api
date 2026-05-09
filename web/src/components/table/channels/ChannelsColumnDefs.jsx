@@ -537,6 +537,17 @@ export const getChannelsColumns = ({
       title: t('状态'),
       dataIndex: 'status',
       render: (text, record, index) => {
+        if (record.archived) {
+          return (
+            <Tooltip
+              content={t('归档渠道不会参与调度，启用后会自动移出归档。')}
+            >
+              <Tag color='grey' shape='circle'>
+                {t('已归档')}
+              </Tag>
+            </Tooltip>
+          );
+        }
         if (text === 3) {
           if (record.other_info === '') {
             record.other_info = '{}';
@@ -735,6 +746,39 @@ export const getChannelsColumns = ({
         if (record.children === undefined) {
           const upstreamUpdateMeta = getUpstreamUpdateMeta(record);
           const moreMenuItems = [
+            record.archived
+              ? {
+                  node: 'item',
+                  name: t('取消归档'),
+                  type: 'tertiary',
+                  onClick: () => {
+                    Modal.confirm({
+                      title: t('确定要取消归档此渠道？'),
+                      content: t(
+                        '取消归档后渠道会回到普通列表，但不会自动启用。',
+                      ),
+                      onOk: async () => {
+                        await manageChannel(record.id, 'unarchive', record);
+                      },
+                    });
+                  },
+                }
+              : {
+                  node: 'item',
+                  name: t('归档'),
+                  type: 'tertiary',
+                  onClick: () => {
+                    Modal.confirm({
+                      title: t('确定要归档此渠道？'),
+                      content: t(
+                        '归档后渠道会被自动禁用，并且只在归档 tab 中显示。',
+                      ),
+                      onOk: async () => {
+                        await manageChannel(record.id, 'archive', record);
+                      },
+                    });
+                  },
+                },
             {
               node: 'item',
               name: t('删除'),
@@ -841,7 +885,7 @@ export const getChannelsColumns = ({
                 />
               </SplitButtonGroup>
 
-              {record.status === 1 ? (
+              {record.status === 1 && !record.archived ? (
                 <Button
                   type='danger'
                   size='small'
@@ -852,7 +896,19 @@ export const getChannelsColumns = ({
               ) : (
                 <Button
                   size='small'
-                  onClick={() => manageChannel(record.id, 'enable', record)}
+                  onClick={() => {
+                    if (record.archived) {
+                      Modal.confirm({
+                        title: t('确认启用归档渠道？'),
+                        content: t(
+                          '启用后该渠道会自动移出归档分类，并重新参与调度。',
+                        ),
+                        onOk: () => manageChannel(record.id, 'enable', record),
+                      });
+                      return;
+                    }
+                    manageChannel(record.id, 'enable', record);
+                  }}
                 >
                   {t('启用')}
                 </Button>
