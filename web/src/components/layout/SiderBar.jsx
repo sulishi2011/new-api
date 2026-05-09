@@ -40,6 +40,7 @@ const routerMap = {
   user: '/console/user',
   subscription: '/console/subscription',
   log: '/console/log',
+  usage_aggregates: '/console/usage_aggregates',
   midjourney: '/console/midjourney',
   setting: '/console/setting',
   about: '/about',
@@ -106,6 +107,12 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         className:
           localStorage.getItem('enable_task') === 'true' ? '' : 'tableHiddle',
       },
+      {
+        text: t('用量汇总'),
+        itemKey: 'usage_aggregates',
+        to: '/usage_aggregates',
+        className: isAdmin() ? '' : 'tableHiddle',
+      },
     ];
 
     // 根据配置过滤项目
@@ -119,6 +126,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
     localStorage.getItem('enable_data_export'),
     localStorage.getItem('enable_drawing'),
     localStorage.getItem('enable_task'),
+    isAdmin(),
     t,
     isModuleVisible,
   ]);

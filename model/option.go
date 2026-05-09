@@ -160,6 +160,14 @@ func InitOptionMap() {
 	common.OptionMap["DataExportInterval"] = strconv.Itoa(common.DataExportInterval)
 	common.OptionMap["DataExportDefaultTime"] = common.DataExportDefaultTime
 	common.OptionMap["DefaultCollapseSidebar"] = strconv.FormatBool(common.DefaultCollapseSidebar)
+	common.OptionMap["UsageAggregationEnabled"] = strconv.FormatBool(common.UsageAggregationEnabled)
+	common.OptionMap["UsageAggregationScheduleMinute"] = strconv.Itoa(common.UsageAggregationScheduleMinute)
+	common.OptionMap["UsageAggregationHourlyRetentionDays"] = strconv.Itoa(common.UsageAggregationHourlyRetentionDays)
+	common.OptionMap["UsageAggregationDailyRetentionDays"] = strconv.Itoa(common.UsageAggregationDailyRetentionDays)
+	common.OptionMap["UsageAggregationRecomputeHours"] = strconv.Itoa(common.UsageAggregationRecomputeHours)
+	common.OptionMap["UsageAggregationRecomputeDays"] = strconv.Itoa(common.UsageAggregationRecomputeDays)
+	common.OptionMap["UsageAggregationDeleteBatchHours"] = strconv.Itoa(common.UsageAggregationDeleteBatchHours)
+	common.OptionMap["UsageAggregationExportMaxRows"] = strconv.Itoa(common.UsageAggregationExportMaxRows)
 	common.OptionMap["MjNotifyEnabled"] = strconv.FormatBool(setting.MjNotifyEnabled)
 	common.OptionMap["MjAccountFilterEnabled"] = strconv.FormatBool(setting.MjAccountFilterEnabled)
 	common.OptionMap["MjModeClearEnabled"] = strconv.FormatBool(setting.MjModeClearEnabled)
@@ -299,6 +307,8 @@ func updateOptionMap(key string, value string) (err error) {
 			common.TaskEnabled = boolValue
 		case "DataExportEnabled":
 			common.DataExportEnabled = boolValue
+		case "UsageAggregationEnabled":
+			common.UsageAggregationEnabled = boolValue
 		case "DefaultCollapseSidebar":
 			common.DefaultCollapseSidebar = boolValue
 		case "MjNotifyEnabled":
@@ -503,6 +513,26 @@ func updateOptionMap(key string, value string) (err error) {
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":
 		common.DataExportDefaultTime = value
+	case "UsageAggregationScheduleMinute":
+		common.UsageAggregationScheduleMinute, _ = strconv.Atoi(value)
+		if common.UsageAggregationScheduleMinute < 0 {
+			common.UsageAggregationScheduleMinute = 0
+		}
+		if common.UsageAggregationScheduleMinute > 59 {
+			common.UsageAggregationScheduleMinute = 59
+		}
+	case "UsageAggregationHourlyRetentionDays":
+		common.UsageAggregationHourlyRetentionDays, _ = strconv.Atoi(value)
+	case "UsageAggregationDailyRetentionDays":
+		common.UsageAggregationDailyRetentionDays, _ = strconv.Atoi(value)
+	case "UsageAggregationRecomputeHours":
+		common.UsageAggregationRecomputeHours, _ = strconv.Atoi(value)
+	case "UsageAggregationRecomputeDays":
+		common.UsageAggregationRecomputeDays, _ = strconv.Atoi(value)
+	case "UsageAggregationDeleteBatchHours":
+		common.UsageAggregationDeleteBatchHours, _ = strconv.Atoi(value)
+	case "UsageAggregationExportMaxRows":
+		common.UsageAggregationExportMaxRows, _ = strconv.Atoi(value)
 	case "ModelRatio":
 		err = ratio_setting.UpdateModelRatioByJSONString(value)
 	case "GroupRatio":

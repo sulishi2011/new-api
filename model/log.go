@@ -499,6 +499,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
+	} else if params.LogType == LogTypeConsume {
+		CreateUsageLedgerFromLog(log, params.Other)
 	}
 }
 

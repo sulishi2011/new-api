@@ -122,6 +122,18 @@ func InitEnv() {
 	RelayTimeout = GetEnvOrDefault("RELAY_TIMEOUT", 0)
 	RelayMaxIdleConns = GetEnvOrDefault("RELAY_MAX_IDLE_CONNS", 500)
 	RelayMaxIdleConnsPerHost = GetEnvOrDefault("RELAY_MAX_IDLE_CONNS_PER_HOST", 100)
+	UsageAggregationEnabled = GetEnvOrDefaultBool("USAGE_AGGREGATION_ENABLED", UsageAggregationEnabled)
+	UsageAggregationScheduleMinute = GetEnvOrDefault("USAGE_AGGREGATION_SCHEDULE_MINUTE", UsageAggregationScheduleMinute)
+	if UsageAggregationScheduleMinute < 0 || UsageAggregationScheduleMinute > 59 {
+		SysError("USAGE_AGGREGATION_SCHEDULE_MINUTE must be between 0 and 59, using default value: 10")
+		UsageAggregationScheduleMinute = 10
+	}
+	UsageAggregationHourlyRetentionDays = GetEnvOrDefault("USAGE_AGGREGATION_HOURLY_RETENTION_DAYS", UsageAggregationHourlyRetentionDays)
+	UsageAggregationDailyRetentionDays = GetEnvOrDefault("USAGE_AGGREGATION_DAILY_RETENTION_DAYS", UsageAggregationDailyRetentionDays)
+	UsageAggregationRecomputeHours = GetEnvOrDefault("USAGE_AGGREGATION_RECOMPUTE_HOURS", UsageAggregationRecomputeHours)
+	UsageAggregationRecomputeDays = GetEnvOrDefault("USAGE_AGGREGATION_RECOMPUTE_DAYS", UsageAggregationRecomputeDays)
+	UsageAggregationDeleteBatchHours = GetEnvOrDefault("USAGE_AGGREGATION_DELETE_BATCH_HOURS", UsageAggregationDeleteBatchHours)
+	UsageAggregationExportMaxRows = GetEnvOrDefault("USAGE_AGGREGATION_EXPORT_MAX_ROWS", UsageAggregationExportMaxRows)
 
 	// Initialize string variables with GetEnvOrDefaultString
 	GeminiSafetySetting = GetEnvOrDefaultString("GEMINI_SAFETY_SETTING", "BLOCK_NONE")

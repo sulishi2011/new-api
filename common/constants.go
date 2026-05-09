@@ -30,6 +30,15 @@ var DataExportInterval = 5         // unit: minute
 var DataExportDefaultTime = "hour" // unit: minute
 var DefaultCollapseSidebar = false // default value of collapse sidebar
 
+var UsageAggregationEnabled = true
+var UsageAggregationScheduleMinute = 10
+var UsageAggregationHourlyRetentionDays = 90
+var UsageAggregationDailyRetentionDays = 0
+var UsageAggregationRecomputeHours = 1
+var UsageAggregationRecomputeDays = 2
+var UsageAggregationDeleteBatchHours = 24
+var UsageAggregationExportMaxRows = 200000
+
 // Any options with "Secret", "Token" in its key won't be return by GetOptions
 
 var SessionSecret = uuid.New().String()

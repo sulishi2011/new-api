@@ -11,11 +11,13 @@ type UsageLedger struct {
 	NewapiLogId          int      `json:"newapi_log_id" gorm:"uniqueIndex"`
 	RequestId            string   `json:"request_id" gorm:"type:varchar(64);index;default:''"`
 	ExternalRequestId    string   `json:"external_request_id" gorm:"type:varchar(128);index;default:''"`
-	Timestamp            int64    `json:"timestamp" gorm:"bigint;index;index:idx_usage_ledger_vendor_profile_time,priority:2;index:idx_usage_ledger_channel_time,priority:2;index:idx_usage_ledger_model_time,priority:2;index:idx_usage_ledger_token_time,priority:2;index:idx_usage_ledger_group_time,priority:2;index:idx_usage_ledger_biz_scene_time,priority:3"`
+	Timestamp            int64    `json:"timestamp" gorm:"bigint;index;index:idx_usage_ledger_vendor_profile_time,priority:2;index:idx_usage_ledger_channel_time,priority:2;index:idx_usage_ledger_model_time,priority:2;index:idx_usage_ledger_token_time,priority:2;index:idx_usage_ledger_provider_key_time,priority:2;index:idx_usage_ledger_group_time,priority:2;index:idx_usage_ledger_biz_scene_time,priority:3"`
 	UserId               int      `json:"user_id" gorm:"index;default:0"`
 	Username             string   `json:"username" gorm:"type:varchar(64);index;default:''"`
 	TokenId              int      `json:"token_id" gorm:"default:0;index:idx_usage_ledger_token_time,priority:1"`
 	TokenName            string   `json:"token_name" gorm:"type:varchar(191);default:''"`
+	ProviderKeyId        int      `json:"provider_key_id" gorm:"default:0;index:idx_usage_ledger_provider_key_time,priority:1"`
+	ProviderKeyPreview   string   `json:"provider_key_preview" gorm:"type:varchar(255);default:''"`
 	BizLine              string   `json:"biz_line" gorm:"type:varchar(32);index:idx_usage_ledger_biz_scene_time,priority:1;default:''"`
 	BizScene             string   `json:"biz_scene" gorm:"type:varchar(64);index:idx_usage_ledger_biz_scene_time,priority:2;default:''"`
 	UserTier             string   `json:"user_tier" gorm:"type:varchar(32);default:''"`
@@ -93,9 +95,24 @@ func retryCountFromOther(other map[string]interface{}) int {
 	return length - 1
 }
 
+func providerKeyPreviewFromOther(other map[string]interface{}) string {
+	if other == nil {
+		return ""
+	}
+	adminInfo, _ := other["admin_info"].(map[string]interface{})
+	if adminInfo == nil {
+		return ""
+	}
+	preview, _ := adminInfo["provider_key_preview"].(string)
+	return preview
+}
+
 func CreateUsageLedgerFromLog(log *Log, other map[string]interface{}) {
 	if log == nil || log.Type != LogTypeConsume || log.Id == 0 {
 		return
+	}
+	if other == nil {
+		other = make(map[string]interface{})
 	}
 
 	channelName := log.ChannelName
@@ -115,40 +132,42 @@ func CreateUsageLedgerFromLog(log *Log, other map[string]interface{}) {
 	}
 
 	ledger := UsageLedger{
-		NewapiLogId:       log.Id,
-		RequestId:         log.RequestId,
-		ExternalRequestId: log.ExternalRequestId,
-		Timestamp:         log.CreatedAt,
-		UserId:            log.UserId,
-		Username:          log.Username,
-		TokenId:           log.TokenId,
-		TokenName:         log.TokenName,
-		BizLine:           log.BizLine,
-		BizScene:          log.BizScene,
-		UserTier:          log.UserTier,
-		Feature:           log.Feature,
-		InternalUserId:    log.InternalUserId,
-		ConversationId:    log.ConversationId,
-		ClientVersion:     log.ClientVersion,
-		GroupName:         log.Group,
-		RequestedModel:    log.ModelName,
-		ActualModel:       log.ModelName,
-		NewapiChannelId:   log.ChannelId,
-		ChannelName:       channelName,
-		VendorProfileId:   log.VendorProfileId,
-		VendorProfileCode: log.VendorProfileCode,
-		InputTokens:       log.PromptTokens,
-		OutputTokens:      log.CompletionTokens,
-		CacheWriteTokens:  intFromInterface(other["cache_write_tokens"]),
-		CacheReadTokens:   intFromInterface(other["cache_tokens"]),
-		ReasoningTokens:   intFromInterface(other["reasoning_tokens"]),
-		TotalTokens:       log.PromptTokens + log.CompletionTokens,
-		Quota:             log.Quota,
-		CostQuota:         costQuota,
-		Status:            "success",
-		LatencyMs:         log.UseTime * 1000,
-		RetryCount:        retryCountFromOther(other),
-		CreatedAt:         common.GetTimestamp(),
+		NewapiLogId:        log.Id,
+		RequestId:          log.RequestId,
+		ExternalRequestId:  log.ExternalRequestId,
+		Timestamp:          log.CreatedAt,
+		UserId:             log.UserId,
+		Username:           log.Username,
+		TokenId:            log.TokenId,
+		TokenName:          log.TokenName,
+		ProviderKeyId:      log.ProviderKeyId,
+		ProviderKeyPreview: providerKeyPreviewFromOther(other),
+		BizLine:            log.BizLine,
+		BizScene:           log.BizScene,
+		UserTier:           log.UserTier,
+		Feature:            log.Feature,
+		InternalUserId:     log.InternalUserId,
+		ConversationId:     log.ConversationId,
+		ClientVersion:      log.ClientVersion,
+		GroupName:          log.Group,
+		RequestedModel:     log.ModelName,
+		ActualModel:        log.ModelName,
+		NewapiChannelId:    log.ChannelId,
+		ChannelName:        channelName,
+		VendorProfileId:    log.VendorProfileId,
+		VendorProfileCode:  log.VendorProfileCode,
+		InputTokens:        log.PromptTokens,
+		OutputTokens:       log.CompletionTokens,
+		CacheWriteTokens:   intFromInterface(other["cache_write_tokens"]),
+		CacheReadTokens:    intFromInterface(other["cache_tokens"]),
+		ReasoningTokens:    intFromInterface(other["reasoning_tokens"]),
+		TotalTokens:        log.PromptTokens + log.CompletionTokens,
+		Quota:              log.Quota,
+		CostQuota:          costQuota,
+		Status:             "success",
+		LatencyMs:          log.UseTime * 1000,
+		RetryCount:         retryCountFromOther(other),
+		CreatedAt:          common.GetTimestamp(),
 	}
 
 	if upstreamModel, ok := other["upstream_model_name"].(string); ok && upstreamModel != "" {
