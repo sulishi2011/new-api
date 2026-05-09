@@ -348,6 +348,25 @@ export const getChannelsColumns = ({
           upstreamUpdateMeta.supported &&
           upstreamUpdateMeta.enabled &&
           (pendingAddCount > 0 || pendingRemoveCount > 0);
+        const vendorProfile = record.vendor_profile;
+        const vendorProfileCode = vendorProfile?.code || '';
+        const vendorProfileTag = vendorProfileCode ? (
+          <Tooltip
+            content={[
+              vendorProfile.vendor_name,
+              vendorProfile.platform_type,
+              vendorProfile.discount_label || vendorProfile.discount_code,
+            ]
+              .filter(Boolean)
+              .join(' / ')}
+            trigger='hover'
+            position='topLeft'
+          >
+            <Tag color='light-blue' type='light' size='small' shape='circle'>
+              {vendorProfileCode}
+            </Tag>
+          </Tooltip>
+        ) : null;
         const nameNode =
           record.remark && record.remark.trim() !== '' ? (
             <Tooltip
@@ -383,12 +402,17 @@ export const getChannelsColumns = ({
             <span>{text}</span>
           );
 
-        if (!passThroughEnabled && !showUpstreamUpdateTag) {
+        if (
+          !vendorProfileTag &&
+          !passThroughEnabled &&
+          !showUpstreamUpdateTag
+        ) {
           return nameNode;
         }
 
         return (
           <Space spacing={6} align='center'>
+            {vendorProfileTag}
             {nameNode}
             {passThroughEnabled && (
               <Tooltip

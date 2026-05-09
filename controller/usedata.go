@@ -18,18 +18,26 @@ func GetAllQuotaDates(c *gin.Context) {
 	channelID, _ := strconv.Atoi(c.Query("channel"))
 	providerKeyID, _ := strconv.Atoi(c.Query("provider_key_id"))
 	tokenID, _ := strconv.Atoi(c.Query("token_id"))
+	vendorProfileID, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	group := c.Query("group")
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
 	dimension := c.Query("dimension")
 	metric := c.Query("metric")
 	dates, err := model.GetDashboardQuotaData(model.DashboardUsageQuery{
-		Username:       username,
-		StartTimestamp: startTimestamp,
-		EndTimestamp:   endTimestamp,
-		ModelName:      modelName,
-		ChannelID:      channelID,
-		ProviderKeyID:  providerKeyID,
-		TokenID:        tokenID,
-		Dimension:      model.DashboardDimension(dimension),
-		Metric:         model.DashboardMetric(metric),
+		Username:        username,
+		StartTimestamp:  startTimestamp,
+		EndTimestamp:    endTimestamp,
+		ModelName:       modelName,
+		ChannelID:       channelID,
+		ProviderKeyID:   providerKeyID,
+		TokenID:         tokenID,
+		VendorProfileID: vendorProfileID,
+		Group:           group,
+		BizLine:         bizLine,
+		BizScene:        bizScene,
+		Dimension:       model.DashboardDimension(dimension),
+		Metric:          model.DashboardMetric(metric),
 	})
 	if err != nil {
 		common.ApiError(c, err)
@@ -51,16 +59,24 @@ func GetQuotaDatesByUser(c *gin.Context) {
 	channelID, _ := strconv.Atoi(c.Query("channel"))
 	providerKeyID, _ := strconv.Atoi(c.Query("provider_key_id"))
 	tokenID, _ := strconv.Atoi(c.Query("token_id"))
+	vendorProfileID, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	group := c.Query("group")
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
 	metric := c.Query("metric")
 	dates, err := model.GetDashboardUserQuotaData(model.DashboardUsageQuery{
-		Username:       username,
-		StartTimestamp: startTimestamp,
-		EndTimestamp:   endTimestamp,
-		ModelName:      modelName,
-		ChannelID:      channelID,
-		ProviderKeyID:  providerKeyID,
-		TokenID:        tokenID,
-		Metric:         model.DashboardMetric(metric),
+		Username:        username,
+		StartTimestamp:  startTimestamp,
+		EndTimestamp:    endTimestamp,
+		ModelName:       modelName,
+		ChannelID:       channelID,
+		ProviderKeyID:   providerKeyID,
+		TokenID:         tokenID,
+		VendorProfileID: vendorProfileID,
+		Group:           group,
+		BizLine:         bizLine,
+		BizScene:        bizScene,
+		Metric:          model.DashboardMetric(metric),
 	})
 	if err != nil {
 		common.ApiError(c, err)
@@ -81,6 +97,10 @@ func GetUserQuotaDates(c *gin.Context) {
 	channelID, _ := strconv.Atoi(c.Query("channel"))
 	providerKeyID, _ := strconv.Atoi(c.Query("provider_key_id"))
 	tokenID, _ := strconv.Atoi(c.Query("token_id"))
+	vendorProfileID, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	group := c.Query("group")
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
 	dimension := c.Query("dimension")
 	metric := c.Query("metric")
 	// 判断时间跨度是否超过 1 个月
@@ -92,15 +112,19 @@ func GetUserQuotaDates(c *gin.Context) {
 		return
 	}
 	dates, err := model.GetDashboardQuotaData(model.DashboardUsageQuery{
-		UserID:         userId,
-		StartTimestamp: startTimestamp,
-		EndTimestamp:   endTimestamp,
-		ModelName:      modelName,
-		ChannelID:      channelID,
-		ProviderKeyID:  providerKeyID,
-		TokenID:        tokenID,
-		Dimension:      model.DashboardDimension(dimension),
-		Metric:         model.DashboardMetric(metric),
+		UserID:          userId,
+		StartTimestamp:  startTimestamp,
+		EndTimestamp:    endTimestamp,
+		ModelName:       modelName,
+		ChannelID:       channelID,
+		ProviderKeyID:   providerKeyID,
+		TokenID:         tokenID,
+		VendorProfileID: vendorProfileID,
+		Group:           group,
+		BizLine:         bizLine,
+		BizScene:        bizScene,
+		Dimension:       model.DashboardDimension(dimension),
+		Metric:          model.DashboardMetric(metric),
 	})
 	if err != nil {
 		common.ApiError(c, err)

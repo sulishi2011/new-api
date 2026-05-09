@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -19,29 +20,74 @@ import (
 	"gorm.io/gorm"
 )
 
+type requestAttribution struct {
+	ExternalRequestId string
+	BizLine           string
+	BizScene          string
+	UserTier          string
+	Feature           string
+	InternalUserId    string
+	ConversationId    string
+	ClientVersion     string
+}
+
+func limitHeaderValue(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit > 0 && len(value) > limit {
+		return value[:limit]
+	}
+	return value
+}
+
+func getRequestAttribution(c *gin.Context) requestAttribution {
+	if c == nil {
+		return requestAttribution{}
+	}
+	return requestAttribution{
+		ExternalRequestId: limitHeaderValue(c.GetHeader("X-Request-Id"), 128),
+		BizLine:           limitHeaderValue(c.GetHeader("X-Biz-Line"), 32),
+		BizScene:          limitHeaderValue(c.GetHeader("X-Biz-Scene"), 64),
+		UserTier:          limitHeaderValue(c.GetHeader("X-User-Tier"), 32),
+		Feature:           limitHeaderValue(c.GetHeader("X-Feature"), 64),
+		InternalUserId:    limitHeaderValue(c.GetHeader("X-Internal-User-Id"), 128),
+		ConversationId:    limitHeaderValue(c.GetHeader("X-Conversation-Id"), 128),
+		ClientVersion:     limitHeaderValue(c.GetHeader("X-Client-Version"), 64),
+	}
+}
+
 type Log struct {
-	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2"`
-	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type"`
-	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
-	Content          string `json:"content"`
-	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
-	TokenName        string `json:"token_name" gorm:"index;default:''"`
-	ModelName        string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
-	Quota            int    `json:"quota" gorm:"default:0"`
-	PromptTokens     int    `json:"prompt_tokens" gorm:"default:0"`
-	CompletionTokens int    `json:"completion_tokens" gorm:"default:0"`
-	UseTime          int    `json:"use_time" gorm:"default:0"`
-	IsStream         bool   `json:"is_stream"`
-	ChannelId        int    `json:"channel" gorm:"index"`
-	ChannelName      string `json:"channel_name" gorm:"->"`
-	TokenId          int    `json:"token_id" gorm:"default:0;index"`
-	Group            string `json:"group" gorm:"index"`
-	Ip               string `json:"ip" gorm:"index;default:''"`
-	RequestId        string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
-	ProviderKeyId    int    `json:"provider_key_id,omitempty" gorm:"index;default:0"`
-	CostQuota        *int   `json:"cost_quota,omitempty"`
-	Other            string `json:"other"`
+	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2"`
+	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type;index:idx_logs_vendor_profile_created,priority:2;index:idx_logs_biz_line_scene_created,priority:3"`
+	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
+	Content           string `json:"content"`
+	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	TokenName         string `json:"token_name" gorm:"index;default:''"`
+	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	Quota             int    `json:"quota" gorm:"default:0"`
+	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
+	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
+	UseTime           int    `json:"use_time" gorm:"default:0"`
+	IsStream          bool   `json:"is_stream"`
+	ChannelId         int    `json:"channel" gorm:"index"`
+	ChannelName       string `json:"channel_name" gorm:"->"`
+	TokenId           int    `json:"token_id" gorm:"default:0;index"`
+	Group             string `json:"group" gorm:"index"`
+	Ip                string `json:"ip" gorm:"index;default:''"`
+	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
+	ExternalRequestId string `json:"external_request_id,omitempty" gorm:"type:varchar(128);index;default:''"`
+	BizLine           string `json:"biz_line,omitempty" gorm:"type:varchar(32);index:idx_logs_biz_line_scene_created,priority:1;default:''"`
+	BizScene          string `json:"biz_scene,omitempty" gorm:"type:varchar(64);index:idx_logs_biz_line_scene_created,priority:2;default:''"`
+	UserTier          string `json:"user_tier,omitempty" gorm:"type:varchar(32);default:''"`
+	Feature           string `json:"feature,omitempty" gorm:"type:varchar(64);default:''"`
+	InternalUserId    string `json:"internal_user_id,omitempty" gorm:"type:varchar(128);default:''"`
+	ConversationId    string `json:"conversation_id,omitempty" gorm:"type:varchar(128);default:''"`
+	ClientVersion     string `json:"client_version,omitempty" gorm:"type:varchar(64);default:''"`
+	VendorProfileId   int    `json:"vendor_profile_id,omitempty" gorm:"index:idx_logs_vendor_profile_created,priority:1;default:0"`
+	VendorProfileCode string `json:"vendor_profile_code,omitempty" gorm:"type:varchar(64);index;default:''"`
+	ProviderKeyId     int    `json:"provider_key_id,omitempty" gorm:"index;default:0"`
+	CostQuota         *int   `json:"cost_quota,omitempty"`
+	Other             string `json:"other"`
 }
 
 // don't use iota, avoid change log type value
@@ -154,6 +200,8 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	logger.LogInfo(c, fmt.Sprintf("record error log: userId=%d, channelId=%d, modelName=%s, tokenName=%s, content=%s", userId, channelId, modelName, tokenName, content))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
+	attribution := getRequestAttribution(c)
+	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(channelId)
 	other, providerKeyId := appendProviderKeyInfo(c, other)
 	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
@@ -185,9 +233,19 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			}
 			return ""
 		}(),
-		RequestId:     requestId,
-		ProviderKeyId: providerKeyId,
-		Other:         otherStr,
+		RequestId:         requestId,
+		ExternalRequestId: attribution.ExternalRequestId,
+		BizLine:           attribution.BizLine,
+		BizScene:          attribution.BizScene,
+		UserTier:          attribution.UserTier,
+		Feature:           attribution.Feature,
+		InternalUserId:    attribution.InternalUserId,
+		ConversationId:    attribution.ConversationId,
+		ClientVersion:     attribution.ClientVersion,
+		VendorProfileId:   vendorProfileId,
+		VendorProfileCode: vendorProfileCode,
+		ProviderKeyId:     providerKeyId,
+		Other:             otherStr,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
@@ -279,6 +337,24 @@ func resolveChannelCostRatio(c *gin.Context, channelID int) float64 {
 	return getChannelCostRatioByID(channelID)
 }
 
+func resolveVendorProfileByChannelID(channelID int) (int, string) {
+	if channelID <= 0 {
+		return 0, ""
+	}
+	channel, err := CacheGetChannel(channelID)
+	if err != nil || channel == nil || channel.VendorProfileId <= 0 {
+		return 0, ""
+	}
+	if channel.VendorProfile != nil && channel.VendorProfile.Code != "" {
+		return channel.VendorProfileId, channel.VendorProfile.Code
+	}
+	profile, err := GetVendorProfileByID(channel.VendorProfileId)
+	if err != nil || profile == nil {
+		return channel.VendorProfileId, ""
+	}
+	return profile.Id, profile.Code
+}
+
 func calculateCostQuota(quota int, costRatio float64) *int {
 	costQuota := int(math.Round(float64(quota) * normalizeCostRatio(costRatio)))
 	return &costQuota
@@ -316,6 +392,8 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(loggedParams)))
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
+	attribution := getRequestAttribution(c)
+	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(params.ChannelId)
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -346,14 +424,26 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			}
 			return ""
 		}(),
-		RequestId:     requestId,
-		ProviderKeyId: providerKeyId,
-		CostQuota:     costQuota,
-		Other:         otherStr,
+		RequestId:         requestId,
+		ExternalRequestId: attribution.ExternalRequestId,
+		BizLine:           attribution.BizLine,
+		BizScene:          attribution.BizScene,
+		UserTier:          attribution.UserTier,
+		Feature:           attribution.Feature,
+		InternalUserId:    attribution.InternalUserId,
+		ConversationId:    attribution.ConversationId,
+		ClientVersion:     attribution.ClientVersion,
+		VendorProfileId:   vendorProfileId,
+		VendorProfileCode: vendorProfileCode,
+		ProviderKeyId:     providerKeyId,
+		CostQuota:         costQuota,
+		Other:             otherStr,
 	}
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else {
+		CreateUsageLedgerFromLog(log, params.Other)
 	}
 	if common.DataExportEnabled {
 		gopool.Go(func() {
@@ -412,7 +502,20 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
+type LogQueryOptions struct {
+	ExternalRequestId string
+	VendorProfileId   int
+	BizLine           string
+	BizScene          string
+	UserTier          string
+	Feature           string
+}
+
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int) (logs []*Log, total int64, err error) {
+	return GetAllLogsWithOptions(logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, providerKeyId, LogQueryOptions{})
+}
+
+func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = logReadDB()
@@ -432,8 +535,26 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
 	}
+	if opts.ExternalRequestId != "" {
+		tx = tx.Where("logs.external_request_id = ?", opts.ExternalRequestId)
+	}
 	if providerKeyId != 0 {
 		tx = tx.Where("logs.provider_key_id = ?", providerKeyId)
+	}
+	if opts.VendorProfileId != 0 {
+		tx = tx.Where("logs.vendor_profile_id = ?", opts.VendorProfileId)
+	}
+	if opts.BizLine != "" {
+		tx = tx.Where("logs.biz_line = ?", opts.BizLine)
+	}
+	if opts.BizScene != "" {
+		tx = tx.Where("logs.biz_scene = ?", opts.BizScene)
+	}
+	if opts.UserTier != "" {
+		tx = tx.Where("logs.user_tier = ?", opts.UserTier)
+	}
+	if opts.Feature != "" {
+		tx = tx.Where("logs.feature = ?", opts.Feature)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -502,6 +623,10 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, providerKeyId int) (logs []*Log, total int64, err error) {
+	return GetUserLogsWithOptions(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, startIdx, num, group, requestId, providerKeyId, LogQueryOptions{})
+}
+
+func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = logReadDB().Where("logs.user_id = ?", userId)
@@ -522,8 +647,26 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
 	}
+	if opts.ExternalRequestId != "" {
+		tx = tx.Where("logs.external_request_id = ?", opts.ExternalRequestId)
+	}
 	if providerKeyId != 0 {
 		tx = tx.Where("logs.provider_key_id = ?", providerKeyId)
+	}
+	if opts.VendorProfileId != 0 {
+		tx = tx.Where("logs.vendor_profile_id = ?", opts.VendorProfileId)
+	}
+	if opts.BizLine != "" {
+		tx = tx.Where("logs.biz_line = ?", opts.BizLine)
+	}
+	if opts.BizScene != "" {
+		tx = tx.Where("logs.biz_scene = ?", opts.BizScene)
+	}
+	if opts.UserTier != "" {
+		tx = tx.Where("logs.user_tier = ?", opts.UserTier)
+	}
+	if opts.Feature != "" {
+		tx = tx.Where("logs.feature = ?", opts.Feature)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -555,7 +698,7 @@ type Stat struct {
 	Tpm   int `json:"tpm"`
 }
 
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, providerKeyId int) (stat Stat, err error) {
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, externalRequestId string, providerKeyId int, vendorProfileId int, bizLine string, bizScene string, userTier string, feature string) (stat Stat, err error) {
 	tx := logReadDB().Table("logs").Select("sum(quota) quota")
 
 	// 为rpm和tpm创建单独的查询
@@ -587,9 +730,33 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		tx = tx.Where("channel_id = ?", channel)
 		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)
 	}
+	if externalRequestId != "" {
+		tx = tx.Where("external_request_id = ?", externalRequestId)
+		rpmTpmQuery = rpmTpmQuery.Where("external_request_id = ?", externalRequestId)
+	}
 	if providerKeyId != 0 {
 		tx = tx.Where("provider_key_id = ?", providerKeyId)
 		rpmTpmQuery = rpmTpmQuery.Where("provider_key_id = ?", providerKeyId)
+	}
+	if vendorProfileId != 0 {
+		tx = tx.Where("vendor_profile_id = ?", vendorProfileId)
+		rpmTpmQuery = rpmTpmQuery.Where("vendor_profile_id = ?", vendorProfileId)
+	}
+	if bizLine != "" {
+		tx = tx.Where("biz_line = ?", bizLine)
+		rpmTpmQuery = rpmTpmQuery.Where("biz_line = ?", bizLine)
+	}
+	if bizScene != "" {
+		tx = tx.Where("biz_scene = ?", bizScene)
+		rpmTpmQuery = rpmTpmQuery.Where("biz_scene = ?", bizScene)
+	}
+	if userTier != "" {
+		tx = tx.Where("user_tier = ?", userTier)
+		rpmTpmQuery = rpmTpmQuery.Where("user_tier = ?", userTier)
+	}
+	if feature != "" {
+		tx = tx.Where("feature = ?", feature)
+		rpmTpmQuery = rpmTpmQuery.Where("feature = ?", feature)
 	}
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)

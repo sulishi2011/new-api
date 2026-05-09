@@ -346,6 +346,17 @@ func SetApiRouter(router *gin.Engine) {
 			vendorRoute.DELETE("/:id", controller.DeleteVendorMeta)
 		}
 
+		vendorProfileRoute := apiRouter.Group("/vendor_profiles")
+		vendorProfileRoute.Use(middleware.AdminAuth())
+		{
+			vendorProfileRoute.GET("/", controller.GetAllVendorProfiles)
+			vendorProfileRoute.GET("/search", controller.SearchVendorProfiles)
+			vendorProfileRoute.GET("/:id", controller.GetVendorProfile)
+			vendorProfileRoute.POST("/", controller.CreateVendorProfile)
+			vendorProfileRoute.PUT("/", controller.UpdateVendorProfile)
+			vendorProfileRoute.DELETE("/:id", controller.DeleteVendorProfile)
+		}
+
 		modelsRoute := apiRouter.Group("/models")
 		modelsRoute.Use(middleware.AdminAuth())
 		{

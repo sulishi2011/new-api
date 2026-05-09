@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -136,7 +137,7 @@ func GetAllChannels(c *gin.Context) {
 			order = "id desc"
 		}
 
-		err := baseQuery.Order(order).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("key").Find(&channelData).Error
+		err := baseQuery.Preload("VendorProfile").Order(order).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("key").Find(&channelData).Error
 		if err != nil {
 			common.SysError("failed to get channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
@@ -294,6 +295,17 @@ func SearchChannels(c *gin.Context) {
 				continue
 			}
 			filtered = append(filtered, ch)
+		}
+		channelData = filtered
+	}
+
+	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	if vendorProfileId > 0 {
+		filtered := make([]*model.Channel, 0, len(channelData))
+		for _, ch := range channelData {
+			if ch.VendorProfileId == vendorProfileId {
+				filtered = append(filtered, ch)
+			}
 		}
 		channelData = filtered
 	}
@@ -487,6 +499,12 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			if v, ok := keyMap["account_id"]; !ok || v == nil || strings.TrimSpace(fmt.Sprintf("%v", v)) == "" {
 				return fmt.Errorf("Codex key JSON must include account_id")
 			}
+		}
+	}
+
+	if channel.VendorProfileId > 0 {
+		if _, err := model.GetVendorProfileByID(channel.VendorProfileId); err != nil {
+			return fmt.Errorf("供应商配置不存在")
 		}
 	}
 
@@ -918,11 +936,18 @@ type PatchChannel struct {
 
 func UpdateChannel(c *gin.Context) {
 	channel := PatchChannel{}
-	err := c.ShouldBindJSON(&channel)
+	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
+	if err := common.Unmarshal(body, &channel); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	var raw map[string]interface{}
+	_ = common.Unmarshal(body, &raw)
+	_, vendorProfileProvided := raw["vendor_profile_id"]
 
 	// 使用统一的校验函数
 	if err := validateChannel(&channel.Channel, false); err != nil {
@@ -1034,6 +1059,13 @@ func UpdateChannel(c *gin.Context) {
 	if err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	if vendorProfileProvided {
+		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("vendor_profile_id", channel.VendorProfileId).Error; err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		channel.VendorProfile = nil
 	}
 	model.InitChannelCache()
 	service.ResetProxyClientCache()

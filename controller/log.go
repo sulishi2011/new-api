@@ -21,8 +21,21 @@ func GetAllLogs(c *gin.Context) {
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
 	requestId := c.Query("request_id")
+	externalRequestId := c.Query("external_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
-	logs, total, err := model.GetAllLogs(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, providerKeyId)
+	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
+	userTier := c.Query("user_tier")
+	feature := c.Query("feature")
+	logs, total, err := model.GetAllLogsWithOptions(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, providerKeyId, model.LogQueryOptions{
+		ExternalRequestId: externalRequestId,
+		VendorProfileId:   vendorProfileId,
+		BizLine:           bizLine,
+		BizScene:          bizScene,
+		UserTier:          userTier,
+		Feature:           feature,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -43,8 +56,21 @@ func GetUserLogs(c *gin.Context) {
 	modelName := c.Query("model_name")
 	group := c.Query("group")
 	requestId := c.Query("request_id")
+	externalRequestId := c.Query("external_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
-	logs, total, err := model.GetUserLogs(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, providerKeyId)
+	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
+	userTier := c.Query("user_tier")
+	feature := c.Query("feature")
+	logs, total, err := model.GetUserLogsWithOptions(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, providerKeyId, model.LogQueryOptions{
+		ExternalRequestId: externalRequestId,
+		VendorProfileId:   vendorProfileId,
+		BizLine:           bizLine,
+		BizScene:          bizScene,
+		UserTier:          userTier,
+		Feature:           feature,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -104,8 +130,14 @@ func GetLogsStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
+	externalRequestId := c.Query("external_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, providerKeyId)
+	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
+	userTier := c.Query("user_tier")
+	feature := c.Query("feature")
+	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, externalRequestId, providerKeyId, vendorProfileId, bizLine, bizScene, userTier, feature)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -132,8 +164,14 @@ func GetLogsSelfStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
+	externalRequestId := c.Query("external_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, providerKeyId)
+	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
+	bizLine := c.Query("biz_line")
+	bizScene := c.Query("biz_scene")
+	userTier := c.Query("user_tier")
+	feature := c.Query("feature")
+	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group, externalRequestId, providerKeyId, vendorProfileId, bizLine, bizScene, userTier, feature)
 	if err != nil {
 		common.ApiError(c, err)
 		return

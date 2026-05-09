@@ -13,33 +13,44 @@ type DashboardDimension string
 type DashboardMetric string
 
 const (
-	DashboardDimensionModel       DashboardDimension = "model_name"
-	DashboardDimensionProviderKey DashboardDimension = "provider_key_id"
-	DashboardDimensionChannel     DashboardDimension = "channel_id"
-	DashboardDimensionToken       DashboardDimension = "token_id"
-	DashboardDimensionUsername    DashboardDimension = "username"
+	DashboardDimensionModel         DashboardDimension = "model_name"
+	DashboardDimensionProviderKey   DashboardDimension = "provider_key_id"
+	DashboardDimensionChannel       DashboardDimension = "channel_id"
+	DashboardDimensionToken         DashboardDimension = "token_id"
+	DashboardDimensionUsername      DashboardDimension = "username"
+	DashboardDimensionVendorProfile DashboardDimension = "vendor_profile_id"
+	DashboardDimensionGroup         DashboardDimension = "group"
+	DashboardDimensionBizLine       DashboardDimension = "biz_line"
+	DashboardDimensionBizScene      DashboardDimension = "biz_scene"
 
 	DashboardMetricOriginal DashboardMetric = "original_quota"
 	DashboardMetricCost     DashboardMetric = "cost_quota"
 )
 
 type DashboardUsageQuery struct {
-	UserID         int
-	Username       string
-	StartTimestamp int64
-	EndTimestamp   int64
-	ModelName      string
-	ChannelID      int
-	ProviderKeyID  int
-	TokenID        int
-	Dimension      DashboardDimension
-	Metric         DashboardMetric
+	UserID          int
+	Username        string
+	StartTimestamp  int64
+	EndTimestamp    int64
+	ModelName       string
+	ChannelID       int
+	ProviderKeyID   int
+	TokenID         int
+	VendorProfileID int
+	Group           string
+	BizLine         string
+	BizScene        string
+	Dimension       DashboardDimension
+	Metric          DashboardMetric
 }
 
 type dashboardUsageAggregate struct {
 	CreatedAt   int64  `gorm:"column:created_at"`
 	ModelName   string `gorm:"column:model_name"`
 	Username    string `gorm:"column:username"`
+	GroupName   string `gorm:"column:group_name"`
+	BizLine     string `gorm:"column:biz_line"`
+	BizScene    string `gorm:"column:biz_scene"`
 	DimensionID int    `gorm:"column:dimension_id"`
 	Count       int    `gorm:"column:count"`
 	Quota       int    `gorm:"column:quota"`
@@ -57,7 +68,11 @@ func normalizeDashboardDimension(input string) DashboardDimension {
 		DashboardDimensionProviderKey,
 		DashboardDimensionChannel,
 		DashboardDimensionToken,
-		DashboardDimensionUsername:
+		DashboardDimensionUsername,
+		DashboardDimensionVendorProfile,
+		DashboardDimensionGroup,
+		DashboardDimensionBizLine,
+		DashboardDimensionBizScene:
 		return DashboardDimension(input)
 	default:
 		return DashboardDimensionModel
@@ -95,6 +110,18 @@ func buildDashboardUsageBaseQuery(query DashboardUsageQuery) (*gorm.DB, error) {
 	if query.TokenID != 0 {
 		tx = tx.Where("token_id = ?", query.TokenID)
 	}
+	if query.VendorProfileID != 0 {
+		tx = tx.Where("vendor_profile_id = ?", query.VendorProfileID)
+	}
+	if query.Group != "" {
+		tx = tx.Where(logGroupCol+" = ?", query.Group)
+	}
+	if query.BizLine != "" {
+		tx = tx.Where("biz_line = ?", query.BizLine)
+	}
+	if query.BizScene != "" {
+		tx = tx.Where("biz_scene = ?", query.BizScene)
+	}
 	return tx, nil
 }
 
@@ -117,6 +144,14 @@ func getDashboardDimensionParts(dimension DashboardDimension) (selectPart string
 		return "token_id AS dimension_id", "token_id"
 	case DashboardDimensionUsername:
 		return "username", "username"
+	case DashboardDimensionVendorProfile:
+		return "vendor_profile_id AS dimension_id", "vendor_profile_id"
+	case DashboardDimensionGroup:
+		return logGroupCol + " AS group_name", logGroupCol
+	case DashboardDimensionBizLine:
+		return "biz_line", "biz_line"
+	case DashboardDimensionBizScene:
+		return "biz_scene", "biz_scene"
 	default:
 		return "model_name", "model_name"
 	}
@@ -158,8 +193,12 @@ func loadNamedEntityMap(table string, ids []int) map[int]string {
 	if len(ids) == 0 {
 		return map[int]string{}
 	}
+	nameColumn := "name"
+	if table == "vendor_profiles" {
+		nameColumn = "code"
+	}
 	var rows []dashboardNamedEntity
-	if err := readDB().Table(table).Select("id, name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
+	if err := readDB().Table(table).Select("id, "+nameColumn+" AS name").Where("id IN ?", ids).Find(&rows).Error; err != nil {
 		common.SysLog(fmt.Sprintf("failed to load %s names: %v", table, err))
 		return map[int]string{}
 	}
@@ -189,7 +228,7 @@ func resolveDashboardDimensionLabel(row dashboardUsageAggregate, dimension Dashb
 	switch dimension {
 	case DashboardDimensionProviderKey:
 		return strconv.Itoa(row.DimensionID)
-	case DashboardDimensionChannel, DashboardDimensionToken:
+	case DashboardDimensionChannel, DashboardDimensionToken, DashboardDimensionVendorProfile:
 		if name := nameMap[row.DimensionID]; name != "" {
 			return fmt.Sprintf("%d - %s", row.DimensionID, name)
 		}
@@ -197,6 +236,21 @@ func resolveDashboardDimensionLabel(row dashboardUsageAggregate, dimension Dashb
 	case DashboardDimensionUsername:
 		if row.Username != "" {
 			return row.Username
+		}
+		return "-"
+	case DashboardDimensionGroup:
+		if row.GroupName != "" {
+			return row.GroupName
+		}
+		return "-"
+	case DashboardDimensionBizLine:
+		if row.BizLine != "" {
+			return row.BizLine
+		}
+		return "-"
+	case DashboardDimensionBizScene:
+		if row.BizScene != "" {
+			return row.BizScene
 		}
 		return "-"
 	default:
@@ -214,6 +268,8 @@ func mapDashboardRowsToQuotaData(rows []dashboardUsageAggregate, dimension Dashb
 		nameMap = loadNamedEntityMap("channels", collectDashboardDimensionIDs(rows))
 	case DashboardDimensionToken:
 		nameMap = loadNamedEntityMap("tokens", collectDashboardDimensionIDs(rows))
+	case DashboardDimensionVendorProfile:
+		nameMap = loadNamedEntityMap("vendor_profiles", collectDashboardDimensionIDs(rows))
 	}
 
 	results := make([]*QuotaData, 0, len(rows))

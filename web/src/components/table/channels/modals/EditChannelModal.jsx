@@ -444,6 +444,7 @@ const buildChannelSettingPayload = (values, fallbackValues = {}) => {
 const EditChannelModal = (props) => {
   const { t } = useTranslation();
   const channelId = props.editingChannel.id;
+  const vendorProfiles = props.vendorProfiles || [];
   const isEdit = channelId !== undefined;
   const defaultTimeoutSettings = useMemo(
     () => getDefaultChannelTimeoutSettings(props.channelTimeoutDefaults),
@@ -456,6 +457,7 @@ const EditChannelModal = (props) => {
   };
   const originInputs = {
     name: '',
+    vendor_profile_id: 0,
     type: 1,
     key: '',
     openai_organization: '',
@@ -1109,6 +1111,7 @@ const EditChannelModal = (props) => {
       } else {
         data.groups = data.group.split(',');
       }
+      data.vendor_profile_id = data.vendor_profile_id || 0;
       if (data.model_mapping !== '') {
         data.model_mapping = JSON.stringify(
           JSON.parse(data.model_mapping),
@@ -2269,6 +2272,8 @@ const EditChannelModal = (props) => {
 
     let res;
     localInputs.auto_ban = localInputs.auto_ban ? 1 : 0;
+    localInputs.vendor_profile_id = Number(localInputs.vendor_profile_id || 0);
+    delete localInputs.vendor_profile;
     localInputs.models = localInputs.models.join(',');
     localInputs.group = (localInputs.groups || []).join(',');
 
@@ -2567,6 +2572,19 @@ const EditChannelModal = (props) => {
         label: opt.label,
       })),
     [],
+  );
+
+  const vendorProfileOptions = useMemo(
+    () => [
+      { label: t('不关联供应商配置'), value: 0 },
+      ...vendorProfiles.map((profile) => ({
+        label: profile.discount_label
+          ? `${profile.code} (${profile.discount_label})`
+          : profile.code,
+        value: profile.id,
+      })),
+    ],
+    [t, vendorProfiles],
   );
 
   const renderChannelOption = (renderProps) => {
@@ -3546,6 +3564,18 @@ const EditChannelModal = (props) => {
                           initValue={inputs.is_enterprise_account}
                         />
                       )}
+
+                      <Form.Select
+                        field='vendor_profile_id'
+                        label={t('供应商配置')}
+                        placeholder={t('请选择供应商配置')}
+                        optionList={vendorProfileOptions}
+                        style={{ width: '100%' }}
+                        filter={selectFilter}
+                        onChange={(value) =>
+                          handleInputChange('vendor_profile_id', value)
+                        }
+                      />
 
                       <Form.Input
                         field='name'

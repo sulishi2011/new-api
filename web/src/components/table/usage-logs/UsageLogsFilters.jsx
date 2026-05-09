@@ -102,6 +102,51 @@ const LogsFilters = ({
             size='small'
           />
 
+          <Form.Input
+            field='external_request_id'
+            prefix={<IconSearch />}
+            placeholder={t('业务 Request ID')}
+            showClear
+            pure
+            size='small'
+          />
+
+          <Form.Input
+            field='biz_line'
+            prefix={<IconSearch />}
+            placeholder={t('业务线')}
+            showClear
+            pure
+            size='small'
+          />
+
+          <Form.Input
+            field='biz_scene'
+            prefix={<IconSearch />}
+            placeholder={t('业务场景')}
+            showClear
+            pure
+            size='small'
+          />
+
+          <Form.Input
+            field='user_tier'
+            prefix={<IconSearch />}
+            placeholder={t('用户层级')}
+            showClear
+            pure
+            size='small'
+          />
+
+          <Form.Input
+            field='feature'
+            prefix={<IconSearch />}
+            placeholder={t('功能')}
+            showClear
+            pure
+            size='small'
+          />
+
           {isAdminUser && (
             <>
               <Form.Input
@@ -116,6 +161,14 @@ const LogsFilters = ({
                 field='provider_key_id'
                 prefix={<IconSearch />}
                 placeholder={t('上游 Key ID')}
+                showClear
+                pure
+                size='small'
+              />
+              <Form.Input
+                field='vendor_profile_id'
+                prefix={<IconSearch />}
+                placeholder={t('供应商配置 ID')}
                 showClear
                 pure
                 size='small'

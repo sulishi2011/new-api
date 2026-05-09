@@ -49,6 +49,7 @@ const ChannelsActions = ({
   setEnableTagMode,
   statusFilter,
   setStatusFilter,
+  setShowVendorProfileManage,
   getFormValues,
   loadChannels,
   searchChannels,
@@ -228,6 +229,15 @@ const ChannelsActions = ({
             setCompactMode={setCompactMode}
             t={t}
           />
+
+          <Button
+            size='small'
+            type='tertiary'
+            className='w-full md:w-auto'
+            onClick={() => setShowVendorProfileManage(true)}
+          >
+            {t('供应商配置')}
+          </Button>
         </div>
 
         {/* 右侧：设置开关区域 */}

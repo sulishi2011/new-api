@@ -34,6 +34,7 @@ import EditChannelModal from './modals/EditChannelModal';
 import EditTagModal from './modals/EditTagModal';
 import MultiKeyManageModal from './modals/MultiKeyManageModal';
 import ChannelUpstreamUpdateModal from './modals/ChannelUpstreamUpdateModal';
+import VendorProfileModal from './modals/VendorProfileModal';
 import { createCardProPagination } from '../../../helpers/utils';
 
 const ChannelsPage = () => {
@@ -57,8 +58,18 @@ const ChannelsPage = () => {
           handleClose={channelsData.closeEdit}
           editingChannel={channelsData.editingChannel}
           channelTimeoutDefaults={channelsData.channelTimeoutDefaults}
+          vendorProfiles={channelsData.vendorProfiles}
         />
       ) : null}
+      <VendorProfileModal
+        visible={channelsData.showVendorProfileManage}
+        handleClose={() => channelsData.setShowVendorProfileManage(false)}
+        refresh={() => {
+          channelsData.fetchVendorProfiles();
+          channelsData.refresh();
+        }}
+        t={channelsData.t}
+      />
       <BatchTagModal {...channelsData} />
       <ModelTestModal {...channelsData} />
       <MultiKeyManageModal

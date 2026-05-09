@@ -135,6 +135,42 @@ const DashboardFilters = ({
             size='small'
             onChange={(value) => handleInputChange(value, 'token_id')}
           />
+
+          <Input
+            value={inputs.vendor_profile_id}
+            placeholder={t('供应商配置 ID')}
+            showClear
+            pure
+            size='small'
+            onChange={(value) => handleInputChange(value, 'vendor_profile_id')}
+          />
+
+          <Input
+            value={inputs.group}
+            placeholder={t('分组')}
+            showClear
+            pure
+            size='small'
+            onChange={(value) => handleInputChange(value, 'group')}
+          />
+
+          <Input
+            value={inputs.biz_line}
+            placeholder={t('业务线')}
+            showClear
+            pure
+            size='small'
+            onChange={(value) => handleInputChange(value, 'biz_line')}
+          />
+
+          <Input
+            value={inputs.biz_scene}
+            placeholder={t('业务场景')}
+            showClear
+            pure
+            size='small'
+            onChange={(value) => handleInputChange(value, 'biz_scene')}
+          />
         </div>
 
         <div className='text-xs text-[var(--semi-color-text-2)]'>

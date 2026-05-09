@@ -111,6 +111,8 @@ export const useChannelsData = () => {
   const [showBatchSetTag, setShowBatchSetTag] = useState(false);
   const [batchSetTagValue, setBatchSetTagValue] = useState('');
   const [compactMode, setCompactMode] = useTableCompactMode('channels');
+  const [vendorProfiles, setVendorProfiles] = useState([]);
+  const [showVendorProfileManage, setShowVendorProfileManage] = useState(false);
 
   // Column visibility states
   const [visibleColumns, setVisibleColumns] = useState({});
@@ -184,6 +186,7 @@ export const useChannelsData = () => {
     searchKeyword: '',
     searchGroup: '',
     searchModel: '',
+    vendorProfileId: '',
   };
 
   // Column keys
@@ -224,7 +227,20 @@ export const useChannelsData = () => {
     fetchGroups().then();
     loadChannelModels().then();
     fetchChannelPageOptions().then();
+    fetchVendorProfiles().then();
   }, []);
+
+  const fetchVendorProfiles = async () => {
+    try {
+      const res = await API.get('/api/vendor_profiles/?page_size=1000');
+      const { success, data } = res?.data || {};
+      if (success) {
+        setVendorProfiles(data?.items || []);
+      }
+    } catch (error) {
+      setVendorProfiles([]);
+    }
+  };
 
   // Column visibility management
   const getDefaultColumnVisibility = () => {
@@ -372,6 +388,7 @@ export const useChannelsData = () => {
       searchKeyword: formValues.searchKeyword || '',
       searchGroup: formValues.searchGroup || '',
       searchModel: formValues.searchModel || '',
+      vendorProfileId: formValues.vendorProfileId || '',
     };
   };
 
@@ -386,8 +403,14 @@ export const useChannelsData = () => {
   ) => {
     if (statusF === undefined) statusF = statusFilter;
 
-    const { searchKeyword, searchGroup, searchModel } = getFormValues();
-    if (searchKeyword !== '' || searchGroup !== '' || searchModel !== '') {
+    const { searchKeyword, searchGroup, searchModel, vendorProfileId } =
+      getFormValues();
+    if (
+      searchKeyword !== '' ||
+      searchGroup !== '' ||
+      searchModel !== '' ||
+      vendorProfileId !== ''
+    ) {
       setLoading(true);
       await searchChannels(
         enableTagMode,
@@ -440,10 +463,16 @@ export const useChannelsData = () => {
     pageSz = pageSize,
     sortFlag = idSort,
   ) => {
-    const { searchKeyword, searchGroup, searchModel } = getFormValues();
+    const { searchKeyword, searchGroup, searchModel, vendorProfileId } =
+      getFormValues();
     setSearching(true);
     try {
-      if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
+      if (
+        searchKeyword === '' &&
+        searchGroup === '' &&
+        searchModel === '' &&
+        vendorProfileId === ''
+      ) {
         await loadChannels(
           page,
           pageSz,
@@ -457,8 +486,11 @@ export const useChannelsData = () => {
 
       const typeParam = typeKey !== 'all' ? `&type=${typeKey}` : '';
       const statusParam = statusF !== 'all' ? `&status=${statusF}` : '';
+      const vendorProfileParam = vendorProfileId
+        ? `&vendor_profile_id=${vendorProfileId}`
+        : '';
       const res = await API.get(
-        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}`,
+        `/api/channel/search?keyword=${searchKeyword}&group=${searchGroup}&model=${searchModel}&id_sort=${sortFlag}&tag_mode=${enableTagMode}&p=${page}&page_size=${pageSz}${typeParam}${statusParam}${vendorProfileParam}`,
       );
       const { success, message, data } = res.data;
       if (success) {
@@ -481,8 +513,14 @@ export const useChannelsData = () => {
 
   // Refresh
   const refresh = async (page = activePage) => {
-    const { searchKeyword, searchGroup, searchModel } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
+    const { searchKeyword, searchGroup, searchModel, vendorProfileId } =
+      getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchModel === '' &&
+      vendorProfileId === ''
+    ) {
       await loadChannels(page, pageSize, idSort, enableTagMode);
     } else {
       await searchChannels(
@@ -577,9 +615,15 @@ export const useChannelsData = () => {
 
   // Page handlers
   const handlePageChange = (page) => {
-    const { searchKeyword, searchGroup, searchModel } = getFormValues();
+    const { searchKeyword, searchGroup, searchModel, vendorProfileId } =
+      getFormValues();
     setActivePage(page);
-    if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchModel === '' &&
+      vendorProfileId === ''
+    ) {
       loadChannels(page, pageSize, idSort, enableTagMode).then(() => {});
     } else {
       searchChannels(
@@ -597,8 +641,14 @@ export const useChannelsData = () => {
     localStorage.setItem('page-size', size + '');
     setPageSize(size);
     setActivePage(1);
-    const { searchKeyword, searchGroup, searchModel } = getFormValues();
-    if (searchKeyword === '' && searchGroup === '' && searchModel === '') {
+    const { searchKeyword, searchGroup, searchModel, vendorProfileId } =
+      getFormValues();
+    if (
+      searchKeyword === '' &&
+      searchGroup === '' &&
+      searchModel === '' &&
+      vendorProfileId === ''
+    ) {
       loadChannels(1, size, idSort, enableTagMode)
         .then()
         .catch((reason) => {
@@ -1220,6 +1270,8 @@ export const useChannelsData = () => {
     compactMode,
     globalPassThroughEnabled,
     channelTimeoutDefaults,
+    vendorProfiles,
+    fetchVendorProfiles,
 
     // UI states
     showEdit,
@@ -1236,6 +1288,8 @@ export const useChannelsData = () => {
     setShowBatchSetTag,
     batchSetTagValue,
     setBatchSetTagValue,
+    showVendorProfileManage,
+    setShowVendorProfileManage,
 
     // Column states
     visibleColumns,

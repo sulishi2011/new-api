@@ -32,6 +32,7 @@ const ChannelsFilters = ({
   enableTagMode,
   formApi,
   groupOptions,
+  vendorProfiles,
   loading,
   searching,
   t,
@@ -119,6 +120,29 @@ const ChannelsFilters = ({
               pure
               onChange={() => {
                 // 延迟执行搜索，让表单值先更新
+                setTimeout(() => {
+                  searchChannels(enableTagMode);
+                }, 0);
+              }}
+            />
+          </div>
+          <div className='w-full md:w-44'>
+            <Form.Select
+              size='small'
+              field='vendorProfileId'
+              placeholder={t('供应商配置')}
+              optionList={[
+                { label: t('供应商配置'), value: '' },
+                ...(vendorProfiles || []).map((profile) => ({
+                  label: profile.code,
+                  value: String(profile.id),
+                })),
+              ]}
+              className='w-full'
+              showClear
+              pure
+              filter
+              onChange={() => {
                 setTimeout(() => {
                   searchChannels(enableTagMode);
                 }, 0);

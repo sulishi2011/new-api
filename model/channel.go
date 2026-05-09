@@ -39,15 +39,17 @@ type Channel struct {
 	UsedQuota          int64   `json:"used_quota" gorm:"bigint;default:0"`
 	ModelMapping       *string `json:"model_mapping" gorm:"type:text"`
 	//MaxInputTokens     *int    `json:"max_input_tokens" gorm:"default:0"`
-	StatusCodeMapping *string `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
-	Priority          *int64  `json:"priority" gorm:"bigint;default:0"`
-	AutoBan           *int    `json:"auto_ban" gorm:"default:1"`
-	OtherInfo         string  `json:"other_info"`
-	Tag               *string `json:"tag" gorm:"index"`
-	Setting           *string `json:"setting" gorm:"type:text"` // 渠道额外设置
-	ParamOverride     *string `json:"param_override" gorm:"type:text"`
-	HeaderOverride    *string `json:"header_override" gorm:"type:text"`
-	Remark            *string `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	StatusCodeMapping *string        `json:"status_code_mapping" gorm:"type:varchar(1024);default:''"`
+	Priority          *int64         `json:"priority" gorm:"bigint;default:0"`
+	AutoBan           *int           `json:"auto_ban" gorm:"default:1"`
+	OtherInfo         string         `json:"other_info"`
+	Tag               *string        `json:"tag" gorm:"index"`
+	Setting           *string        `json:"setting" gorm:"type:text"` // 渠道额外设置
+	ParamOverride     *string        `json:"param_override" gorm:"type:text"`
+	HeaderOverride    *string        `json:"header_override" gorm:"type:text"`
+	Remark            *string        `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
+	VendorProfileId   int            `json:"vendor_profile_id" gorm:"index;default:0"`
+	VendorProfile     *VendorProfile `json:"vendor_profile,omitempty" gorm:"foreignKey:VendorProfileId;references:Id"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
 
@@ -268,9 +270,9 @@ func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool) ([]*Chan
 		order = "id desc"
 	}
 	if selectAll {
-		err = DB.Order(order).Find(&channels).Error
+		err = DB.Preload("VendorProfile").Order(order).Find(&channels).Error
 	} else {
-		err = DB.Order(order).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
+		err = DB.Preload("VendorProfile").Order(order).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
 	}
 	return channels, err
 }
@@ -292,7 +294,7 @@ func GetChannelsByTag(tag string, idSort bool, selectAll bool) ([]*Channel, erro
 	if idSort {
 		order = "id desc"
 	}
-	query := withTagCondition(DB, tag).Order(order)
+	query := withTagCondition(DB.Preload("VendorProfile"), tag).Order(order)
 	if !selectAll {
 		query = query.Omit("key")
 	}
@@ -321,7 +323,7 @@ func SearchChannels(keyword string, group string, model string, idSort bool) ([]
 	}
 
 	// 构造基础查询
-	baseQuery := DB.Model(&Channel{}).Omit("key")
+	baseQuery := DB.Model(&Channel{}).Preload("VendorProfile").Omit("key")
 
 	// 构造WHERE子句
 	var whereClause string
@@ -353,9 +355,9 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	channel := &Channel{Id: id}
 	var err error = nil
 	if selectAll {
-		err = DB.First(channel, "id = ?", id).Error
+		err = DB.Preload("VendorProfile").First(channel, "id = ?", id).Error
 	} else {
-		err = DB.Omit("key").First(channel, "id = ?", id).Error
+		err = DB.Preload("VendorProfile").Omit("key").First(channel, "id = ?", id).Error
 	}
 	if err != nil {
 		return nil, err
@@ -506,7 +508,7 @@ func (channel *Channel) Update() error {
 		}
 	}
 	var err error
-	err = DB.Model(channel).Updates(channel).Error
+	err = DB.Model(channel).Omit("VendorProfile").Updates(channel).Error
 	if err != nil {
 		return err
 	}

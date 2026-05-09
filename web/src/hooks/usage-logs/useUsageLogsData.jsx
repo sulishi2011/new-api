@@ -219,6 +219,12 @@ export const useLogsData = () => {
     provider_key_id: queryPrefill.provider_key_id,
     group: '',
     request_id: queryPrefill.request_id,
+    external_request_id: '',
+    vendor_profile_id: '',
+    biz_line: '',
+    biz_scene: '',
+    user_tier: '',
+    feature: '',
     dateRange: [
       timestamp2string(getTodayStartTimestamp()),
       timestamp2string(now.getTime() / 1000 + 3600),
@@ -378,6 +384,12 @@ export const useLogsData = () => {
       provider_key_id: formValues.provider_key_id || '',
       group: formValues.group || '',
       request_id: formValues.request_id || '',
+      external_request_id: formValues.external_request_id || '',
+      vendor_profile_id: formValues.vendor_profile_id || '',
+      biz_line: formValues.biz_line || '',
+      biz_scene: formValues.biz_scene || '',
+      user_tier: formValues.user_tier || '',
+      feature: formValues.feature || '',
       logType: formValues.logType ? parseInt(formValues.logType) : 0,
     };
   };
@@ -390,12 +402,18 @@ export const useLogsData = () => {
       start_timestamp,
       end_timestamp,
       group,
+      external_request_id,
+      vendor_profile_id,
+      biz_line,
+      biz_scene,
+      user_tier,
+      feature,
       logType: formLogType,
     } = getFormValues();
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/self/stat?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}`;
+    let url = `/api/log/self/stat?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -416,12 +434,18 @@ export const useLogsData = () => {
       channel,
       provider_key_id,
       group,
+      external_request_id,
+      vendor_profile_id,
+      biz_line,
+      biz_scene,
+      user_tier,
+      feature,
       logType: formLogType,
     } = getFormValues();
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}`;
+    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -520,6 +544,30 @@ export const useLogsData = () => {
           value: logs[i].request_id,
         });
       }
+      if (logs[i].external_request_id) {
+        expandDataLocal.push({
+          key: t('业务 Request ID'),
+          value: logs[i].external_request_id,
+        });
+      }
+      if (logs[i].vendor_profile_code) {
+        expandDataLocal.push({
+          key: t('供应商配置'),
+          value: logs[i].vendor_profile_code,
+        });
+      }
+      const bizAttrs = [
+        logs[i].biz_line,
+        logs[i].biz_scene,
+        logs[i].user_tier,
+        logs[i].feature,
+      ].filter(Boolean);
+      if (bizAttrs.length > 0) {
+        expandDataLocal.push({
+          key: t('业务归因'),
+          value: bizAttrs.join(' / '),
+        });
+      }
       const providerKeyId =
         logs[i].provider_key_id || other?.admin_info?.provider_key_id || 0;
       if (isAdminUser && providerKeyId) {
@@ -580,7 +628,10 @@ export const useLogsData = () => {
           expandDataLocal.push({
             key: t('日志详情'),
             value: other?.claude
-              ? renderClaudeLogContent({ ...other, displayMode: billingDisplayMode })
+              ? renderClaudeLogContent({
+                  ...other,
+                  displayMode: billingDisplayMode,
+                })
               : renderLogContent({ ...other, displayMode: billingDisplayMode }),
           });
         }
@@ -933,6 +984,12 @@ export const useLogsData = () => {
       provider_key_id,
       group,
       request_id,
+      external_request_id,
+      vendor_profile_id,
+      biz_line,
+      biz_scene,
+      user_tier,
+      feature,
       logType: formLogType,
     } = getFormValues();
 
@@ -945,10 +1002,11 @@ export const useLogsData = () => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
+    const extraParams = `&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
     if (isAdminUser) {
-      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&request_id=${request_id}`;
+      url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&request_id=${request_id}${extraParams}`;
     } else {
-      url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}`;
+      url = `/api/log/self/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&request_id=${request_id}${extraParams}`;
     }
     url = encodeURI(url);
     const res = await API.get(url);
