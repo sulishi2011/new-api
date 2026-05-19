@@ -120,8 +120,8 @@ func CreateUsageLedgerFromLog(log *Log, other map[string]interface{}) {
 	if log.ChannelId > 0 {
 		if channel, err := CacheGetChannel(log.ChannelId); err == nil && channel != nil {
 			channelName = channel.Name
-			if channel.VendorProfileId > 0 {
-				profile, _ = GetVendorProfileByID(channel.VendorProfileId)
+			if vendorProfileId := ChannelVendorProfileIdValue(channel.VendorProfileId); vendorProfileId > 0 {
+				profile, _ = GetVendorProfileByID(vendorProfileId)
 			}
 		}
 	}

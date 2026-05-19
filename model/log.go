@@ -345,15 +345,19 @@ func resolveVendorProfileByChannelID(channelID int) (int, string) {
 		return 0, ""
 	}
 	channel, err := CacheGetChannel(channelID)
-	if err != nil || channel == nil || channel.VendorProfileId <= 0 {
+	if err != nil || channel == nil {
+		return 0, ""
+	}
+	vendorProfileId := ChannelVendorProfileIdValue(channel.VendorProfileId)
+	if vendorProfileId <= 0 {
 		return 0, ""
 	}
 	if channel.VendorProfile != nil && channel.VendorProfile.Code != "" {
-		return channel.VendorProfileId, channel.VendorProfile.Code
+		return vendorProfileId, channel.VendorProfile.Code
 	}
-	profile, err := GetVendorProfileByID(channel.VendorProfileId)
+	profile, err := GetVendorProfileByID(vendorProfileId)
 	if err != nil || profile == nil {
-		return channel.VendorProfileId, ""
+		return vendorProfileId, ""
 	}
 	return profile.Id, profile.Code
 }

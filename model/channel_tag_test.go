@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -40,7 +41,7 @@ func setupChannelTagTestDB(t *testing.T) {
 	DB = db
 	LOG_DB = db
 
-	if err := db.AutoMigrate(&Channel{}, &Ability{}); err != nil {
+	if err := db.AutoMigrate(&Channel{}, &Ability{}, &VendorProfile{}); err != nil {
 		t.Fatalf("failed to migrate channel tag test tables: %v", err)
 	}
 
@@ -60,6 +61,88 @@ func setupChannelTagTestDB(t *testing.T) {
 			_ = sqlDB.Close()
 		}
 	})
+}
+
+func TestChannelVendorProfileZeroIsStoredAsNull(t *testing.T) {
+	setupChannelTagTestDB(t)
+
+	zero := 0
+	channels := []Channel{
+		{
+			Name:            "no vendor profile",
+			Key:             "key-no-profile",
+			Models:          "gpt-test",
+			Group:           "default",
+			VendorProfileId: &zero,
+		},
+	}
+	if err := BatchInsertChannels(channels); err != nil {
+		t.Fatalf("failed to insert channel without vendor profile: %v", err)
+	}
+
+	var stored sql.NullInt64
+	if err := DB.Raw("SELECT vendor_profile_id FROM channels WHERE name = ?", "no vendor profile").Scan(&stored).Error; err != nil {
+		t.Fatalf("failed to inspect stored vendor profile id: %v", err)
+	}
+	if stored.Valid {
+		t.Fatalf("expected vendor_profile_id to be NULL, got %d", stored.Int64)
+	}
+
+	var loaded Channel
+	if err := DB.First(&loaded, "name = ?", "no vendor profile").Error; err != nil {
+		t.Fatalf("failed to reload channel: %v", err)
+	}
+	if loaded.VendorProfileId != nil {
+		t.Fatalf("expected loaded vendor profile id to be nil, got %d", *loaded.VendorProfileId)
+	}
+}
+
+func TestChannelVendorProfileCanBeClearedToNull(t *testing.T) {
+	setupChannelTagTestDB(t)
+
+	profile := VendorProfile{
+		Code:         "openai-default",
+		VendorCode:   "openai",
+		VendorName:   "OpenAI",
+		PlatformType: "api",
+	}
+	if err := profile.Insert(); err != nil {
+		t.Fatalf("failed to insert vendor profile: %v", err)
+	}
+
+	channel := Channel{
+		Name:            "with vendor profile",
+		Key:             "key-with-profile",
+		Models:          "gpt-test",
+		Group:           "default",
+		VendorProfileId: &profile.Id,
+	}
+	if err := channel.Insert(); err != nil {
+		t.Fatalf("failed to insert channel with vendor profile: %v", err)
+	}
+
+	var before sql.NullInt64
+	if err := DB.Raw("SELECT vendor_profile_id FROM channels WHERE id = ?", channel.Id).Scan(&before).Error; err != nil {
+		t.Fatalf("failed to inspect associated vendor profile id: %v", err)
+	}
+	if !before.Valid || int(before.Int64) != profile.Id {
+		t.Fatalf("expected vendor_profile_id %d before clear, got valid=%v value=%d", profile.Id, before.Valid, before.Int64)
+	}
+
+	zero := 0
+	if err := DB.Model(&Channel{}).
+		Where("id = ?", channel.Id).
+		Update("vendor_profile_id", ChannelVendorProfileIdDBValue(&zero)).Error; err != nil {
+		t.Fatalf("failed to clear vendor profile id: %v", err)
+	}
+
+	var after sql.NullInt64
+	if err := DB.Raw("SELECT vendor_profile_id FROM channels WHERE id = ?", channel.Id).Scan(&after).Error; err != nil {
+		t.Fatalf("failed to inspect cleared vendor profile id: %v", err)
+	}
+	if after.Valid {
+		t.Fatalf("expected cleared vendor_profile_id to be NULL, got %d", after.Int64)
+	}
 }
 
 func TestTagAggregationIncludesUntaggedChannels(t *testing.T) {

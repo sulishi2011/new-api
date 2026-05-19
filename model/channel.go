@@ -50,7 +50,7 @@ type Channel struct {
 	ParamOverride     *string        `json:"param_override" gorm:"type:text"`
 	HeaderOverride    *string        `json:"header_override" gorm:"type:text"`
 	Remark            *string        `json:"remark" gorm:"type:varchar(255)" validate:"max=255"`
-	VendorProfileId   int            `json:"vendor_profile_id" gorm:"index;default:0"`
+	VendorProfileId   *int           `json:"vendor_profile_id" gorm:"column:vendor_profile_id;index"`
 	VendorProfile     *VendorProfile `json:"vendor_profile,omitempty" gorm:"foreignKey:VendorProfileId;references:Id"`
 	// add after v0.8.5
 	ChannelInfo ChannelInfo `json:"channel_info" gorm:"type:json"`
@@ -69,6 +69,36 @@ type ChannelInfo struct {
 	MultiKeyDisabledTime   map[int]int64         `json:"multi_key_disabled_time,omitempty"`   // key禁用时间列表，key index -> time
 	MultiKeyPollingIndex   int                   `json:"multi_key_polling_index"`             // 多Key模式下轮询的key索引
 	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
+}
+
+func NormalizeChannelVendorProfileId(vendorProfileId *int) *int {
+	if vendorProfileId == nil || *vendorProfileId <= 0 {
+		return nil
+	}
+	return vendorProfileId
+}
+
+func ChannelVendorProfileIdValue(vendorProfileId *int) int {
+	if vendorProfileId == nil {
+		return 0
+	}
+	return *vendorProfileId
+}
+
+func ChannelVendorProfileIdDBValue(vendorProfileId *int) interface{} {
+	if normalized := NormalizeChannelVendorProfileId(vendorProfileId); normalized != nil {
+		return *normalized
+	}
+	return nil
+}
+
+func (channel *Channel) normalizeVendorProfileId() {
+	channel.VendorProfileId = NormalizeChannelVendorProfileId(channel.VendorProfileId)
+}
+
+func (channel *Channel) BeforeSave(tx *gorm.DB) error {
+	channel.normalizeVendorProfileId()
+	return nil
 }
 
 type ChannelSortOptions struct {

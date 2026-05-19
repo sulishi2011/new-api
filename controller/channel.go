@@ -349,7 +349,7 @@ func SearchChannels(c *gin.Context) {
 	if vendorProfileId > 0 {
 		filtered := make([]*model.Channel, 0, len(channelData))
 		for _, ch := range channelData {
-			if ch.VendorProfileId == vendorProfileId {
+			if model.ChannelVendorProfileIdValue(ch.VendorProfileId) == vendorProfileId {
 				filtered = append(filtered, ch)
 			}
 		}
@@ -557,8 +557,9 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
-	if channel.VendorProfileId > 0 {
-		if _, err := model.GetVendorProfileByID(channel.VendorProfileId); err != nil {
+	vendorProfileId := model.ChannelVendorProfileIdValue(channel.VendorProfileId)
+	if vendorProfileId > 0 {
+		if _, err := model.GetVendorProfileByID(vendorProfileId); err != nil {
 			return fmt.Errorf("供应商配置不存在")
 		}
 	}
@@ -1222,7 +1223,7 @@ func UpdateChannel(c *gin.Context) {
 		return
 	}
 	if vendorProfileProvided {
-		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("vendor_profile_id", channel.VendorProfileId).Error; err != nil {
+		if err := model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("vendor_profile_id", model.ChannelVendorProfileIdDBValue(channel.VendorProfileId)).Error; err != nil {
 			common.ApiError(c, err)
 			return
 		}
