@@ -33,7 +33,7 @@ func GetAllEnableAbilityWithChannels() ([]AbilityWithChannel, error) {
 	err := DB.Table("abilities").
 		Select("abilities.*, channels.type as channel_type").
 		Joins("left join channels on abilities.channel_id = channels.id").
-		Where("abilities.enabled = ? AND channels.archived = ?", true, false).
+		Where("abilities.enabled = ? AND (channels.id IS NULL OR channels.archived = ?)", true, false).
 		Scan(&abilities).Error
 	return abilities, err
 }

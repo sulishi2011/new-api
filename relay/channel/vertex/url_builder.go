@@ -38,6 +38,7 @@ func appendVertexAPIVersion(baseURL, version string) string {
 func BuildAPIBaseURL(baseURL, version, projectID, region string) string {
 	if normalized := normalizeVertexBaseURL(baseURL); normalized != "" {
 		normalized = appendVertexAPIVersion(normalized, version)
+
 		region = normalizeVertexRegion(region)
 		if strings.TrimSpace(projectID) != "" {
 			normalized = fmt.Sprintf("%s/projects/%s/locations/%s", normalized, projectID, region)

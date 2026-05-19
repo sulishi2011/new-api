@@ -16,6 +16,7 @@ import (
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type Channel struct {
@@ -68,6 +69,98 @@ type ChannelInfo struct {
 	MultiKeyDisabledTime   map[int]int64         `json:"multi_key_disabled_time,omitempty"`   // key禁用时间列表，key index -> time
 	MultiKeyPollingIndex   int                   `json:"multi_key_polling_index"`             // 多Key模式下轮询的key索引
 	MultiKeyMode           constant.MultiKeyMode `json:"multi_key_mode"`
+}
+
+type ChannelSortOptions struct {
+	SortBy    string
+	SortOrder string
+	IDSort    bool
+}
+
+var channelSortColumns = map[string]string{
+	"id":            "id",
+	"name":          "name",
+	"priority":      "priority",
+	"balance":       "balance",
+	"response_time": "response_time",
+	"test_time":     "test_time",
+}
+
+func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {
+	normalizedSortBy := strings.ToLower(strings.TrimSpace(sortBy))
+	normalizedSortOrder := strings.ToLower(strings.TrimSpace(sortOrder))
+	if _, ok := channelSortColumns[normalizedSortBy]; !ok {
+		normalizedSortBy = ""
+		normalizedSortOrder = ""
+	} else if normalizedSortOrder != "asc" {
+		normalizedSortOrder = "desc"
+	}
+
+	return ChannelSortOptions{
+		SortBy:    normalizedSortBy,
+		SortOrder: normalizedSortOrder,
+		IDSort:    idSort,
+	}
+}
+
+func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
+	if columnName, ok := channelSortColumns[options.SortBy]; ok {
+		return query.Order(clause.OrderByColumn{
+			Column: clause.Column{Name: columnName},
+			Desc:   options.SortOrder != "asc",
+		})
+	}
+	if options.IDSort {
+		return query.Order(clause.OrderByColumn{
+			Column: clause.Column{Name: "id"},
+			Desc:   true,
+		})
+	}
+	return query.Order(clause.OrderByColumn{
+		Column: clause.Column{Name: "priority"},
+		Desc:   true,
+	})
+}
+
+func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) ChannelSortOptions {
+	if len(sortOptions) == 0 {
+		return NewChannelSortOptions("", "", idSort)
+	}
+	options := sortOptions[0]
+	options.IDSort = options.IDSort || idSort
+	return options
+}
+
+func NormalizeChannelGroupFilter(group string) string {
+	group = strings.TrimSpace(group)
+	if group == "" || strings.EqualFold(group, "all") || strings.EqualFold(group, "null") {
+		return ""
+	}
+	return group
+}
+
+func channelGroupFilterCondition() string {
+	if common.UsingMySQL {
+		return `CONCAT(',', ` + commonGroupCol + `, ',') LIKE ? ESCAPE '!'`
+	}
+	return `(',' || ` + commonGroupCol + ` || ',') LIKE ? ESCAPE '!'`
+}
+
+func channelGroupFilterPattern(group string) string {
+	group = strings.NewReplacer(
+		"!", "!!",
+		"%", "!%",
+		"_", "!_",
+	).Replace(group)
+	return "%," + group + ",%"
+}
+
+func ApplyChannelGroupFilter(query *gorm.DB, group string) *gorm.DB {
+	group = NormalizeChannelGroupFilter(group)
+	if group == "" {
+		return query
+	}
+	return query.Where(channelGroupFilterCondition(), channelGroupFilterPattern(group))
 }
 
 // Value implements driver.Valuer interface
@@ -267,17 +360,14 @@ func (channel *Channel) SaveWithoutKey() error {
 	return DB.Omit("key").Save(channel).Error
 }
 
-func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool) ([]*Channel, error) {
+func GetAllChannels(startIdx int, num int, selectAll bool, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	var err error
-	order := "priority desc"
-	if idSort {
-		order = "id desc"
-	}
+	order := resolveChannelSortOptions(idSort, sortOptions)
 	if selectAll {
-		err = DB.Preload("VendorProfile").Order(order).Find(&channels).Error
+		err = order.Apply(DB.Preload("VendorProfile")).Find(&channels).Error
 	} else {
-		err = DB.Preload("VendorProfile").Order(order).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
+		err = order.Apply(DB.Preload("VendorProfile")).Limit(num).Offset(startIdx).Omit("key").Find(&channels).Error
 	}
 	return channels, err
 }
@@ -301,17 +391,14 @@ func withUnarchivedCondition(query *gorm.DB) *gorm.DB {
 	return withArchivedCondition(query, false)
 }
 
-func GetChannelsByTag(tag string, idSort bool, selectAll bool) ([]*Channel, error) {
-	return GetChannelsByTagWithArchive(tag, idSort, selectAll, false)
+func GetChannelsByTag(tag string, idSort bool, selectAll bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+	return GetChannelsByTagWithArchive(tag, idSort, selectAll, false, sortOptions...)
 }
 
-func GetChannelsByTagWithArchive(tag string, idSort bool, selectAll bool, archived bool) ([]*Channel, error) {
+func GetChannelsByTagWithArchive(tag string, idSort bool, selectAll bool, archived bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
-	order := "priority desc"
-	if idSort {
-		order = "id desc"
-	}
-	query := withArchivedCondition(withTagCondition(DB.Preload("VendorProfile"), tag), archived).Order(order)
+	order := resolveChannelSortOptions(idSort, sortOptions)
+	query := order.Apply(withArchivedCondition(withTagCondition(DB.Preload("VendorProfile"), tag), archived))
 	if !selectAll {
 		query = query.Omit("key")
 	}
@@ -319,11 +406,11 @@ func GetChannelsByTagWithArchive(tag string, idSort bool, selectAll bool, archiv
 	return channels, err
 }
 
-func SearchChannels(keyword string, group string, model string, idSort bool) ([]*Channel, error) {
-	return SearchChannelsWithArchive(keyword, group, model, idSort, false)
+func SearchChannels(keyword string, group string, model string, idSort bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
+	return SearchChannelsWithArchive(keyword, group, model, idSort, false, sortOptions...)
 }
 
-func SearchChannelsWithArchive(keyword string, group string, model string, idSort bool, archived bool) ([]*Channel, error) {
+func SearchChannelsWithArchive(keyword string, group string, model string, idSort bool, archived bool, sortOptions ...ChannelSortOptions) ([]*Channel, error) {
 	var channels []*Channel
 	modelsCol := "`models`"
 
@@ -338,34 +425,18 @@ func SearchChannelsWithArchive(keyword string, group string, model string, idSor
 		baseURLCol = `"base_url"`
 	}
 
-	order := "priority desc"
-	if idSort {
-		order = "id desc"
-	}
+	order := resolveChannelSortOptions(idSort, sortOptions)
 
 	// 构造基础查询
 	baseQuery := withArchivedCondition(DB.Model(&Channel{}).Preload("VendorProfile").Omit("key"), archived)
 
 	// 构造WHERE子句
-	var whereClause string
-	var args []interface{}
-	if group != "" && group != "null" {
-		var groupCondition string
-		if common.UsingMySQL {
-			groupCondition = `CONCAT(',', ` + commonGroupCol + `, ',') LIKE ?`
-		} else {
-			// sqlite, PostgreSQL
-			groupCondition = `(',' || ` + commonGroupCol + ` || ',') LIKE ?`
-		}
-		whereClause = "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + ` LIKE ? AND ` + groupCondition
-		args = append(args, common.String2Int(keyword), "%"+keyword+"%", keyword, "%"+keyword+"%", "%"+model+"%", "%,"+group+",%")
-	} else {
-		whereClause = "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
-		args = append(args, common.String2Int(keyword), "%"+keyword+"%", keyword, "%"+keyword+"%", "%"+model+"%")
-	}
+	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
+	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
+	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 
 	// 执行查询
-	err := baseQuery.Where(whereClause, args...).Order(order).Find(&channels).Error
+	err := order.Apply(baseQuery).Find(&channels).Error
 	if err != nil {
 		return nil, err
 	}
@@ -382,9 +453,6 @@ func GetChannelById(id int, selectAll bool) (*Channel, error) {
 	}
 	if err != nil {
 		return nil, err
-	}
-	if channel == nil {
-		return nil, errors.New("channel not found")
 	}
 	return channel, nil
 }
@@ -753,7 +821,7 @@ func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *
 		updateData.Tag = newTag
 		updatedTag = *newTag
 	}
-	if modelMapping != nil && *modelMapping != "" {
+	if modelMapping != nil {
 		updateData.ModelMapping = modelMapping
 	}
 	if models != nil && *models != "" {
@@ -826,17 +894,21 @@ func DeleteDisabledChannel() (int64, error) {
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {
-	return GetPaginatedTagsWithArchive(offset, limit, false)
+	return GetPaginatedChannelTags(DB.Model(&Channel{}), offset, limit)
 }
 
 func GetPaginatedTagsWithArchive(offset int, limit int, archived bool) ([]*string, error) {
+	return GetPaginatedChannelTags(withArchivedCondition(DB.Model(&Channel{}), archived), offset, limit)
+}
+
+func GetPaginatedChannelTags(query *gorm.DB, offset int, limit int) ([]*string, error) {
 	if limit <= 0 {
 		return []*string{}, nil
 	}
 
 	tags := make([]*string, 0, limit)
 	var noTagCount int64
-	if err := withArchivedCondition(withTagCondition(DB.Model(&Channel{}), ""), archived).Count(&noTagCount).Error; err != nil {
+	if err := withTagCondition(query.Session(&gorm.Session{}), "").Count(&noTagCount).Error; err != nil {
 		return nil, err
 	}
 	if noTagCount > 0 {
@@ -852,7 +924,8 @@ func GetPaginatedTagsWithArchive(offset int, limit int, archived bool) ([]*strin
 	}
 
 	var nonEmptyTags []*string
-	err := withNonEmptyTagCondition(withArchivedCondition(DB.Model(&Channel{}).Select("DISTINCT tag"), archived)).
+	err := withNonEmptyTagCondition(query.Session(&gorm.Session{}).Select("DISTINCT tag")).
+		Order(clause.OrderByColumn{Column: clause.Column{Name: "tag"}}).
 		Offset(offset).
 		Limit(limit).
 		Find(&nonEmptyTags).Error
@@ -884,25 +957,13 @@ func SearchTagsWithArchive(keyword string, group string, model string, idSort bo
 	}
 
 	// 构造WHERE子句
-	var whereClause string
-	var args []interface{}
-	if group != "" && group != "null" {
-		var groupCondition string
-		if common.UsingMySQL {
-			groupCondition = `CONCAT(',', ` + commonGroupCol + `, ',') LIKE ?`
-		} else {
-			// sqlite, PostgreSQL
-			groupCondition = `(',' || ` + commonGroupCol + ` || ',') LIKE ?`
-		}
-		whereClause = "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + ` LIKE ? AND ` + groupCondition
-		args = append(args, common.String2Int(keyword), "%"+keyword+"%", keyword, "%"+keyword+"%", "%"+model+"%", "%,"+group+",%")
-	} else {
-		whereClause = "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
-		args = append(args, common.String2Int(keyword), "%"+keyword+"%", keyword, "%"+keyword+"%", "%"+model+"%")
-	}
+	whereClause := "(id = ? OR name LIKE ? OR " + commonKeyCol + " = ? OR " + baseURLCol + " LIKE ?) AND " + modelsCol + " LIKE ?"
+	args := []any{common.String2Int(keyword), "%" + keyword + "%", keyword, "%" + keyword + "%", "%" + model + "%"}
+	baseQuery := withArchivedCondition(DB.Model(&Channel{}).Omit("key"), archived)
+	baseQuery = ApplyChannelGroupFilter(baseQuery.Where(whereClause, args...), group)
 
 	matchingQuery := func() *gorm.DB {
-		return withArchivedCondition(DB.Model(&Channel{}).Omit("key").Where(whereClause, args...), archived)
+		return baseQuery.Session(&gorm.Session{})
 	}
 
 	var noTagCount int64
@@ -1055,18 +1116,22 @@ func CountAllChannels() (int64, error) {
 
 // CountAllTags returns distinct tag groups, including one group for untagged channels.
 func CountAllTags() (int64, error) {
-	return CountAllTagsWithArchive(false)
+	return CountChannelTags(DB.Model(&Channel{}))
 }
 
 func CountAllTagsWithArchive(archived bool) (int64, error) {
+	return CountChannelTags(withArchivedCondition(DB.Model(&Channel{}), archived))
+}
+
+func CountChannelTags(query *gorm.DB) (int64, error) {
 	var total int64
-	err := withNonEmptyTagCondition(withArchivedCondition(DB.Model(&Channel{}), archived)).Distinct("tag").Count(&total).Error
+	err := withNonEmptyTagCondition(query.Session(&gorm.Session{})).Distinct("tag").Count(&total).Error
 	if err != nil {
 		return total, err
 	}
 
 	var noTagCount int64
-	err = withArchivedCondition(withTagCondition(DB.Model(&Channel{}), ""), archived).Count(&noTagCount).Error
+	err = withTagCondition(query.Session(&gorm.Session{}), "").Count(&noTagCount).Error
 	if err != nil {
 		return total, err
 	}

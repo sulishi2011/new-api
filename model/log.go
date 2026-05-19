@@ -76,6 +76,7 @@ type Log struct {
 	Ip                string `json:"ip" gorm:"index;default:''"`
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	ExternalRequestId string `json:"external_request_id,omitempty" gorm:"type:varchar(128);index;default:''"`
+	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	BizLine           string `json:"biz_line,omitempty" gorm:"type:varchar(32);index:idx_logs_biz_line_scene_created,priority:1;default:''"`
 	BizScene          string `json:"biz_scene,omitempty" gorm:"type:varchar(64);index:idx_logs_biz_line_scene_created,priority:2;default:''"`
 	UserTier          string `json:"user_tier,omitempty" gorm:"type:varchar(32);default:''"`
@@ -201,6 +202,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	attribution := getRequestAttribution(c)
+	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(channelId)
 	other, providerKeyId := appendProviderKeyInfo(c, other)
 	otherStr := common.MapToJsonStr(other)
@@ -235,6 +237,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		}(),
 		RequestId:         requestId,
 		ExternalRequestId: attribution.ExternalRequestId,
+		UpstreamRequestId: upstreamRequestId,
 		BizLine:           attribution.BizLine,
 		BizScene:          attribution.BizScene,
 		UserTier:          attribution.UserTier,
@@ -393,6 +396,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	username := c.GetString("username")
 	requestId := c.GetString(common.RequestIdKey)
 	attribution := getRequestAttribution(c)
+	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(params.ChannelId)
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
@@ -426,6 +430,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		}(),
 		RequestId:         requestId,
 		ExternalRequestId: attribution.ExternalRequestId,
+		UpstreamRequestId: upstreamRequestId,
 		BizLine:           attribution.BizLine,
 		BizScene:          attribution.BizScene,
 		UserTier:          attribution.UserTier,
@@ -506,6 +511,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 
 type LogQueryOptions struct {
 	ExternalRequestId string
+	UpstreamRequestId string
 	VendorProfileId   int
 	BizLine           string
 	BizScene          string
@@ -525,15 +531,9 @@ func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64
 		tx = logReadDB().Where("logs.type = ?", logType)
 	}
 
-	if modelName != "" {
-		tx = tx.Where("logs.model_name like ?", modelName)
-	}
-	if username != "" {
-		tx = tx.Where("logs.username = ?", username)
-	}
-	if tokenName != "" {
-		tx = tx.Where("logs.token_name = ?", tokenName)
-	}
+	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
+	tx = applyLogContainsFilter(tx, "logs.username", username)
+	tx = applyLogContainsFilter(tx, "logs.token_name", tokenName)
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
 	}
@@ -557,6 +557,9 @@ func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64
 	}
 	if opts.Feature != "" {
 		tx = tx.Where("logs.feature = ?", opts.Feature)
+	}
+	if opts.UpstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", opts.UpstreamRequestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -636,16 +639,8 @@ func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTi
 		tx = logReadDB().Where("logs.user_id = ? and logs.type = ?", userId, logType)
 	}
 
-	if modelName != "" {
-		modelNamePattern, err := sanitizeLikePattern(modelName)
-		if err != nil {
-			return nil, 0, err
-		}
-		tx = tx.Where("logs.model_name LIKE ? ESCAPE '!'", modelNamePattern)
-	}
-	if tokenName != "" {
-		tx = tx.Where("logs.token_name = ?", tokenName)
-	}
+	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
+	tx = applyLogContainsFilter(tx, "logs.token_name", tokenName)
 	if requestId != "" {
 		tx = tx.Where("logs.request_id = ?", requestId)
 	}
@@ -669,6 +664,9 @@ func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTi
 	}
 	if opts.Feature != "" {
 		tx = tx.Where("logs.feature = ?", opts.Feature)
+	}
+	if opts.UpstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", opts.UpstreamRequestId)
 	}
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
@@ -700,34 +698,42 @@ type Stat struct {
 	Tpm   int `json:"tpm"`
 }
 
+func logContainsPattern(input string) (string, bool) {
+	input = strings.TrimSpace(input)
+	if input == "" {
+		return "", false
+	}
+
+	replacer := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_")
+	return "%" + replacer.Replace(input) + "%", true
+}
+
+func applyLogContainsFilter(tx *gorm.DB, column string, value string) *gorm.DB {
+	pattern, ok := logContainsPattern(value)
+	if !ok {
+		return tx
+	}
+	return tx.Where(column+" LIKE ? ESCAPE '!'", pattern)
+}
+
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, externalRequestId string, providerKeyId int, vendorProfileId int, bizLine string, bizScene string, userTier string, feature string) (stat Stat, err error) {
 	tx := logReadDB().Table("logs").Select("sum(quota) quota")
 
 	// 为rpm和tpm创建单独的查询
 	rpmTpmQuery := logReadDB().Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
 
-	if username != "" {
-		tx = tx.Where("username = ?", username)
-		rpmTpmQuery = rpmTpmQuery.Where("username = ?", username)
-	}
-	if tokenName != "" {
-		tx = tx.Where("token_name = ?", tokenName)
-		rpmTpmQuery = rpmTpmQuery.Where("token_name = ?", tokenName)
-	}
+	tx = applyLogContainsFilter(tx, "username", username)
+	rpmTpmQuery = applyLogContainsFilter(rpmTpmQuery, "username", username)
+	tx = applyLogContainsFilter(tx, "token_name", tokenName)
+	rpmTpmQuery = applyLogContainsFilter(rpmTpmQuery, "token_name", tokenName)
 	if startTimestamp != 0 {
 		tx = tx.Where("created_at >= ?", startTimestamp)
 	}
 	if endTimestamp != 0 {
 		tx = tx.Where("created_at <= ?", endTimestamp)
 	}
-	if modelName != "" {
-		modelNamePattern, err := sanitizeLikePattern(modelName)
-		if err != nil {
-			return stat, err
-		}
-		tx = tx.Where("model_name LIKE ? ESCAPE '!'", modelNamePattern)
-		rpmTpmQuery = rpmTpmQuery.Where("model_name LIKE ? ESCAPE '!'", modelNamePattern)
-	}
+	tx = applyLogContainsFilter(tx, "model_name", modelName)
+	rpmTpmQuery = applyLogContainsFilter(rpmTpmQuery, "model_name", modelName)
 	if channel != 0 {
 		tx = tx.Where("channel_id = ?", channel)
 		rpmTpmQuery = rpmTpmQuery.Where("channel_id = ?", channel)

@@ -22,6 +22,7 @@ func GetAllLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	externalRequestId := c.Query("external_request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
 	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
 	bizLine := c.Query("biz_line")
@@ -30,6 +31,7 @@ func GetAllLogs(c *gin.Context) {
 	feature := c.Query("feature")
 	logs, total, err := model.GetAllLogsWithOptions(logType, startTimestamp, endTimestamp, modelName, username, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), channel, group, requestId, providerKeyId, model.LogQueryOptions{
 		ExternalRequestId: externalRequestId,
+		UpstreamRequestId: upstreamRequestId,
 		VendorProfileId:   vendorProfileId,
 		BizLine:           bizLine,
 		BizScene:          bizScene,
@@ -57,6 +59,7 @@ func GetUserLogs(c *gin.Context) {
 	group := c.Query("group")
 	requestId := c.Query("request_id")
 	externalRequestId := c.Query("external_request_id")
+	upstreamRequestId := c.Query("upstream_request_id")
 	providerKeyId, _ := strconv.Atoi(c.Query("provider_key_id"))
 	vendorProfileId, _ := strconv.Atoi(c.Query("vendor_profile_id"))
 	bizLine := c.Query("biz_line")
@@ -65,6 +68,7 @@ func GetUserLogs(c *gin.Context) {
 	feature := c.Query("feature")
 	logs, total, err := model.GetUserLogsWithOptions(userId, logType, startTimestamp, endTimestamp, modelName, tokenName, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), group, requestId, providerKeyId, model.LogQueryOptions{
 		ExternalRequestId: externalRequestId,
+		UpstreamRequestId: upstreamRequestId,
 		VendorProfileId:   vendorProfileId,
 		BizLine:           bizLine,
 		BizScene:          bizScene,
