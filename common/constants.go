@@ -79,6 +79,38 @@ var UsageAggregationRecomputeDays = 2
 var UsageAggregationDeleteBatchHours = 24
 var UsageAggregationExportMaxRows = 200000
 
+var TraceStorageEnabled = false
+var TraceStorageBackend = "s3"
+var TraceRetentionDays = 7
+var TraceCaptureMode = "error"
+var TraceSuccessSampleRate = 0
+var TraceUploadAsync = true
+var TraceUploadSyncForError = true
+var TraceUploadBatchEnabled = false
+var TraceUploadQueueSize = 1000
+var TraceUploadBatchSize = 100
+var TraceUploadBatchFlushIntervalSeconds = 2
+var TraceUploadBatchMaxBytes = 8 << 20
+var TraceS3Bucket = ""
+var TraceS3Region = "us-east-1"
+var TraceS3Endpoint = ""
+var TraceS3AccessKeyID = ""
+var TraceS3SecretAccessKey = ""
+var TraceS3Prefix = "new-api/traces"
+var TraceS3ForcePathStyle = false
+var TraceS3SSE = ""
+
+var LogRetentionEnabled = false
+var LogRetentionConsumeDays = 90
+var LogRetentionErrorDays = 90
+var LogRetentionSystemDays = 180
+var LogRetentionManageDays = 365
+var LogRetentionTopupDays = 0
+var LogRetentionRefundDays = 0
+var LogCleanupIntervalHours = 24
+var LogCleanupBatchSize = 300
+var LogCleanupBatchSleepMS = 200
+
 // Any options with "Secret", "Token" in its key won't be return by GetOptions
 
 var SessionSecret = uuid.New().String()

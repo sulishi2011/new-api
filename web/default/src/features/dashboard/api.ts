@@ -17,7 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
-import type { QuotaDataItem, UptimeGroupResult } from './types'
+import type {
+  QuotaDataItem,
+  UsageAggregateQueryParams,
+  UsageAggregateResponse,
+  UptimeGroupResult,
+} from './types'
 
 // ============================================================================
 // Dashboard APIs
@@ -59,6 +64,25 @@ export async function getUserQuotaDataByUsers(params: {
     { params }
   )
   return res.data
+}
+
+export async function getUsageAggregates(
+  params: UsageAggregateQueryParams
+): Promise<UsageAggregateResponse> {
+  const res = await api.get('/api/usage_aggregates/', { params })
+  return res.data
+}
+
+export async function exportUsageAggregates(
+  params: UsageAggregateQueryParams
+): Promise<Blob> {
+  const res = await api.get('/api/usage_aggregates/export', {
+    params,
+    responseType: 'blob',
+    disableDuplicate: true,
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data as Blob
 }
 
 // Get uptime monitoring status for all services

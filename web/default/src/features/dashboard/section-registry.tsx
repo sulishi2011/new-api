@@ -36,6 +36,14 @@ const DASHBOARD_SECTIONS = [
     build: () => null,
   },
   {
+    id: 'usage-summary',
+    titleKey: 'Usage Summary',
+    descriptionKey:
+      'Review aggregate usage by time, model, channel, token, and provider key.',
+    adminOnly: true,
+    build: () => null,
+  },
+  {
     id: 'users',
     titleKey: 'User Analytics',
     descriptionKey: 'View user consumption statistics and charts',
@@ -46,7 +54,7 @@ const DASHBOARD_SECTIONS = [
 
 export type DashboardSectionId = (typeof DASHBOARD_SECTIONS)[number]['id']
 
-const ADMIN_ONLY_SECTIONS = new Set<string>(['users'])
+const ADMIN_ONLY_SECTIONS = new Set<string>(['usage-summary', 'users'])
 
 const dashboardRegistry = createSectionRegistry<
   DashboardSectionId,

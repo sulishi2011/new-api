@@ -16,7 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import {
+  useState,
+  useCallback,
+  useMemo,
+  lazy,
+  Suspense,
+  useEffect,
+} from 'react'
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 import { useAuthStore } from '@/stores/auth-store'
@@ -74,6 +81,12 @@ const LazyPerformanceOverview = lazy(() =>
 const LazyUserCharts = lazy(() =>
   import('./components/users/user-charts').then((m) => ({
     default: m.UserCharts,
+  }))
+)
+
+const LazyUsageSummary = lazy(() =>
+  import('./components/usage-summary/usage-summary').then((m) => ({
+    default: m.UsageSummary,
   }))
 )
 
@@ -142,6 +155,11 @@ const SECTION_META: Record<
     titleKey: 'Model Call Analytics',
     descriptionKey: 'View model call count analytics and charts',
   },
+  'usage-summary': {
+    titleKey: 'Usage Summary',
+    descriptionKey:
+      'Review aggregate usage by time, model, channel, token, and provider key.',
+  },
   users: {
     titleKey: 'User Analytics',
     descriptionKey: 'View user consumption statistics and charts',
@@ -190,11 +208,26 @@ export function Dashboard() {
   )
 
   const meta = SECTION_META[activeSection] ?? SECTION_META.overview
+  const hasRole = userRole !== undefined && userRole !== null
   const isAdmin = Boolean(userRole && userRole >= ROLE.ADMIN)
+  useEffect(() => {
+    if (
+      hasRole &&
+      !isAdmin &&
+      ['usage-summary', 'users'].includes(activeSection)
+    ) {
+      void navigate({
+        to: '/dashboard/$section',
+        params: { section: DASHBOARD_DEFAULT_SECTION },
+      })
+    }
+  }, [activeSection, hasRole, isAdmin, navigate])
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (!['usage-summary', 'users'].includes(section) || isAdmin)
       ),
     [isAdmin]
   )
@@ -304,6 +337,13 @@ export function Dashboard() {
             <FadeIn>
               <Suspense fallback={<ModelChartsFallback />}>
                 <LazyUserCharts />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'usage-summary' && isAdmin && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyUsageSummary />
               </Suspense>
             </FadeIn>
           )}

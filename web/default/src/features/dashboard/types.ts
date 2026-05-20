@@ -33,6 +33,69 @@ export interface QuotaDataItem {
   quota?: number
 }
 
+export type UsageAggregateGranularity = 'hour' | 'day'
+
+export interface UsageAggregateRow {
+  bucket_start: number
+  channel_id: number
+  channel_name: string
+  provider_key_id: number
+  provider_key_preview: string
+  token_id: number
+  token_name: string
+  requested_model: string
+  actual_model: string
+  request_count: number
+  quota: number
+  cost_quota: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  total_tokens: number
+}
+
+export interface UsageAggregateSummary {
+  request_count: number
+  quota: number
+  cost_quota: number
+  input_tokens: number
+  output_tokens: number
+  cache_read_tokens: number
+  cache_write_tokens: number
+  total_tokens: number
+}
+
+export interface UsageAggregateQueryParams {
+  p?: number
+  page_size?: number
+  granularity?: UsageAggregateGranularity
+  live?: boolean
+  start_timestamp?: number
+  end_timestamp?: number
+  channel_id?: number
+  provider_key_id?: number
+  token_id?: number
+  requested_model?: string
+  actual_model?: string
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}
+
+export interface UsageAggregateResponse {
+  success: boolean
+  message?: string
+  data?: {
+    page: {
+      page: number
+      page_size: number
+      total: number
+      items: UsageAggregateRow[]
+    }
+    summary: UsageAggregateSummary
+  }
+}
+
 // ============================================================================
 // Uptime Monitoring Types
 // ============================================================================

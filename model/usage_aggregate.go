@@ -90,6 +90,7 @@ func (UsageAggregationJob) TableName() string {
 
 type UsageAggregateQuery struct {
 	Granularity    string
+	Live           bool
 	StartTimestamp int64
 	EndTimestamp   int64
 	ChannelId      int
@@ -162,6 +163,13 @@ func usageAggregateTable(granularity string) string {
 		return "usage_aggregate_hourly"
 	}
 	return "usage_aggregate_daily"
+}
+
+func usageAggregateBucketExpression(granularity string, column string) string {
+	if normalizeUsageAggregateGranularity(granularity) == UsageAggregateGranularityHour {
+		return "((" + column + " / 3600) * 3600)"
+	}
+	return "((" + column + " / 86400) * 86400)"
 }
 
 func aggregateSelectFields(bucketExpr string) string {
@@ -434,6 +442,34 @@ func buildUsageAggregateBaseQuery(query UsageAggregateQuery) *gorm.DB {
 	return tx
 }
 
+func buildUsageAggregateLedgerQuery(query UsageAggregateQuery) *gorm.DB {
+	query.Granularity = normalizeUsageAggregateGranularity(query.Granularity)
+	bucketExpr := usageAggregateBucketExpression(query.Granularity, "timestamp")
+	tx := DB.Model(&UsageLedger{}).Select(aggregateSelectFields(bucketExpr))
+	if query.StartTimestamp > 0 {
+		tx = tx.Where("timestamp >= ?", query.StartTimestamp)
+	}
+	if query.EndTimestamp > 0 {
+		tx = tx.Where("timestamp < ?", query.EndTimestamp)
+	}
+	if query.ChannelId != 0 {
+		tx = tx.Where("newapi_channel_id = ?", query.ChannelId)
+	}
+	if query.ProviderKeyId != 0 {
+		tx = tx.Where("provider_key_id = ?", query.ProviderKeyId)
+	}
+	if query.TokenId != 0 {
+		tx = tx.Where("token_id = ?", query.TokenId)
+	}
+	if query.RequestedModel != "" {
+		tx = tx.Where("requested_model = ?", query.RequestedModel)
+	}
+	if query.ActualModel != "" {
+		tx = tx.Where("actual_model = ?", query.ActualModel)
+	}
+	return tx.Group(bucketExpr + ", " + usageAggregateGroupFields())
+}
+
 func usageAggregateSortClause(sortBy string, sortOrder string) string {
 	allowed := map[string]string{
 		"bucket_start":       "bucket_start",
@@ -470,8 +506,21 @@ func usageAggregateSummarySelect() string {
 	}, ", ")
 }
 
+func usageAggregateLimit(limit int) int {
+	if limit <= 0 {
+		limit = common.ItemsPerPage
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return limit
+}
+
 func QueryUsageAggregates(query UsageAggregateQuery) ([]UsageAggregateRow, int64, UsageAggregateSummary, error) {
 	query.Granularity = normalizeUsageAggregateGranularity(query.Granularity)
+	if query.Live {
+		return queryUsageAggregatesFromLedger(query)
+	}
 	base := buildUsageAggregateBaseQuery(query)
 
 	var total int64
@@ -484,13 +533,7 @@ func QueryUsageAggregates(query UsageAggregateQuery) ([]UsageAggregateRow, int64
 		return nil, 0, UsageAggregateSummary{}, err
 	}
 
-	limit := query.Limit
-	if limit <= 0 {
-		limit = common.ItemsPerPage
-	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit := usageAggregateLimit(query.Limit)
 
 	var rows []UsageAggregateRow
 	err := base.Session(&gorm.Session{}).
@@ -501,8 +544,36 @@ func QueryUsageAggregates(query UsageAggregateQuery) ([]UsageAggregateRow, int64
 	return rows, total, summary, err
 }
 
+func queryUsageAggregatesFromLedger(query UsageAggregateQuery) ([]UsageAggregateRow, int64, UsageAggregateSummary, error) {
+	base := buildUsageAggregateLedgerQuery(query)
+	subquery := func() *gorm.DB {
+		return DB.Table("(?) AS usage_agg", base.Session(&gorm.Session{}))
+	}
+
+	var total int64
+	if err := subquery().Count(&total).Error; err != nil {
+		return nil, 0, UsageAggregateSummary{}, err
+	}
+
+	var summary UsageAggregateSummary
+	if err := subquery().Select(usageAggregateSummarySelect()).Scan(&summary).Error; err != nil {
+		return nil, 0, UsageAggregateSummary{}, err
+	}
+
+	var rows []UsageAggregateRow
+	err := subquery().
+		Order(usageAggregateSortClause(query.SortBy, query.SortOrder)).
+		Limit(usageAggregateLimit(query.Limit)).
+		Offset(query.StartIdx).
+		Scan(&rows).Error
+	return rows, total, summary, err
+}
+
 func ExportUsageAggregates(query UsageAggregateQuery, limit int) ([]UsageAggregateRow, int64, error) {
 	query.Granularity = normalizeUsageAggregateGranularity(query.Granularity)
+	if query.Live {
+		return exportUsageAggregatesFromLedger(query, limit)
+	}
 	base := buildUsageAggregateBaseQuery(query)
 
 	var total int64
@@ -521,5 +592,30 @@ func ExportUsageAggregates(query UsageAggregateQuery, limit int) ([]UsageAggrega
 		Order(usageAggregateSortClause(query.SortBy, query.SortOrder)).
 		Limit(limit).
 		Find(&rows).Error
+	return rows, total, err
+}
+
+func exportUsageAggregatesFromLedger(query UsageAggregateQuery, limit int) ([]UsageAggregateRow, int64, error) {
+	base := buildUsageAggregateLedgerQuery(query)
+	subquery := func() *gorm.DB {
+		return DB.Table("(?) AS usage_agg", base.Session(&gorm.Session{}))
+	}
+
+	var total int64
+	if err := subquery().Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		limit = common.UsageAggregationExportMaxRows
+	}
+	if total > int64(limit) {
+		return nil, total, fmt.Errorf("export rows exceed limit: %d > %d", total, limit)
+	}
+
+	var rows []UsageAggregateRow
+	err := subquery().
+		Order(usageAggregateSortClause(query.SortBy, query.SortOrder)).
+		Limit(limit).
+		Scan(&rows).Error
 	return rows, total, err
 }

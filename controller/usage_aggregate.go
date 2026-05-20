@@ -26,6 +26,7 @@ func parseUsageAggregateQuery(c *gin.Context) model.UsageAggregateQuery {
 
 	return model.UsageAggregateQuery{
 		Granularity:    c.DefaultQuery("granularity", model.UsageAggregateGranularityDay),
+		Live:           c.Query("live") == "true" || c.Query("include_live") == "true",
 		StartTimestamp: startTimestamp,
 		EndTimestamp:   endTimestamp,
 		ChannelId:      channelId,

@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
+	"github.com/QuantumNous/new-api/pkg/tracestore"
 	"github.com/QuantumNous/new-api/relay"
 	"github.com/QuantumNous/new-api/router"
 	"github.com/QuantumNous/new-api/service"
@@ -121,6 +122,9 @@ func main() {
 
 	// Usage aggregation task (hourly/daily materialized billing summaries)
 	service.StartUsageAggregationTask()
+
+	// Log retention and trace metadata expiration task
+	service.StartLogRetentionTask()
 
 	// Wire task polling adaptor factory (breaks service -> relay import cycle)
 	service.GetTaskAdaptorFunc = func(platform constant.TaskPlatform) service.TaskPollingAdaptor {
@@ -272,6 +276,9 @@ func InitResources() error {
 	common.InitEnv()
 
 	logger.SetupLogger()
+	if err := tracestore.Init(); err != nil {
+		common.SysError("failed to initialize trace store: " + err.Error())
+	}
 
 	// Initialize model settings
 	ratio_setting.InitRatioSettings()

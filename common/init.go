@@ -134,6 +134,79 @@ func InitEnv() {
 	UsageAggregationRecomputeDays = GetEnvOrDefault("USAGE_AGGREGATION_RECOMPUTE_DAYS", UsageAggregationRecomputeDays)
 	UsageAggregationDeleteBatchHours = GetEnvOrDefault("USAGE_AGGREGATION_DELETE_BATCH_HOURS", UsageAggregationDeleteBatchHours)
 	UsageAggregationExportMaxRows = GetEnvOrDefault("USAGE_AGGREGATION_EXPORT_MAX_ROWS", UsageAggregationExportMaxRows)
+	TraceStorageEnabled = GetEnvOrDefaultBool("TRACE_STORAGE_ENABLED", TraceStorageEnabled)
+	TraceStorageBackend = strings.ToLower(strings.TrimSpace(GetEnvOrDefaultString("TRACE_STORAGE_BACKEND", TraceStorageBackend)))
+	if TraceStorageBackend == "" {
+		TraceStorageBackend = "s3"
+	}
+	TraceRetentionDays = GetEnvOrDefault("TRACE_RETENTION_DAYS", TraceRetentionDays)
+	if TraceRetentionDays < 1 {
+		SysError("TRACE_RETENTION_DAYS must be positive, using default value: 7")
+		TraceRetentionDays = 7
+	}
+	TraceCaptureMode = strings.ToLower(strings.TrimSpace(GetEnvOrDefaultString("TRACE_CAPTURE_MODE", TraceCaptureMode)))
+	if TraceCaptureMode == "" {
+		TraceCaptureMode = "error"
+	}
+	TraceSuccessSampleRate = GetEnvOrDefault("TRACE_SUCCESS_SAMPLE_RATE", TraceSuccessSampleRate)
+	if TraceSuccessSampleRate < 0 {
+		TraceSuccessSampleRate = 0
+	}
+	if TraceSuccessSampleRate > 100 {
+		TraceSuccessSampleRate = 100
+	}
+	TraceUploadAsync = GetEnvOrDefaultBool("TRACE_UPLOAD_ASYNC", TraceUploadAsync)
+	TraceUploadSyncForError = GetEnvOrDefaultBool("TRACE_UPLOAD_SYNC_FOR_ERROR", TraceUploadSyncForError)
+	TraceUploadBatchEnabled = GetEnvOrDefaultBool("TRACE_UPLOAD_BATCH_ENABLED", TraceUploadBatchEnabled)
+	TraceUploadQueueSize = GetEnvOrDefault("TRACE_UPLOAD_QUEUE_SIZE", TraceUploadQueueSize)
+	if TraceUploadQueueSize < 1 {
+		SysError("TRACE_UPLOAD_QUEUE_SIZE must be positive, using default value: 1000")
+		TraceUploadQueueSize = 1000
+	}
+	TraceUploadBatchSize = GetEnvOrDefault("TRACE_UPLOAD_BATCH_SIZE", TraceUploadBatchSize)
+	if TraceUploadBatchSize < 1 {
+		SysError("TRACE_UPLOAD_BATCH_SIZE must be positive, using default value: 100")
+		TraceUploadBatchSize = 100
+	}
+	TraceUploadBatchFlushIntervalSeconds = GetEnvOrDefault("TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS", TraceUploadBatchFlushIntervalSeconds)
+	if TraceUploadBatchFlushIntervalSeconds < 1 {
+		SysError("TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS must be positive, using default value: 2")
+		TraceUploadBatchFlushIntervalSeconds = 2
+	}
+	TraceUploadBatchMaxBytes = GetEnvOrDefault("TRACE_UPLOAD_BATCH_MAX_BYTES", TraceUploadBatchMaxBytes)
+	if TraceUploadBatchMaxBytes < 1024 {
+		SysError("TRACE_UPLOAD_BATCH_MAX_BYTES must be at least 1024, using default value: 8388608")
+		TraceUploadBatchMaxBytes = 8 << 20
+	}
+	TraceS3Bucket = GetEnvOrDefaultString("TRACE_S3_BUCKET", TraceS3Bucket)
+	TraceS3Region = GetEnvOrDefaultString("TRACE_S3_REGION", TraceS3Region)
+	TraceS3Endpoint = GetEnvOrDefaultString("TRACE_S3_ENDPOINT", TraceS3Endpoint)
+	TraceS3AccessKeyID = GetEnvOrDefaultString("TRACE_S3_ACCESS_KEY_ID", TraceS3AccessKeyID)
+	TraceS3SecretAccessKey = GetEnvOrDefaultString("TRACE_S3_SECRET_ACCESS_KEY", TraceS3SecretAccessKey)
+	TraceS3Prefix = strings.Trim(GetEnvOrDefaultString("TRACE_S3_PREFIX", TraceS3Prefix), "/")
+	TraceS3ForcePathStyle = GetEnvOrDefaultBool("TRACE_S3_FORCE_PATH_STYLE", TraceS3ForcePathStyle)
+	TraceS3SSE = strings.TrimSpace(GetEnvOrDefaultString("TRACE_S3_SSE", TraceS3SSE))
+	LogRetentionEnabled = GetEnvOrDefaultBool("LOG_RETENTION_ENABLED", LogRetentionEnabled)
+	LogRetentionConsumeDays = GetEnvOrDefault("LOG_RETENTION_CONSUME_DAYS", LogRetentionConsumeDays)
+	LogRetentionErrorDays = GetEnvOrDefault("LOG_RETENTION_ERROR_DAYS", LogRetentionErrorDays)
+	LogRetentionSystemDays = GetEnvOrDefault("LOG_RETENTION_SYSTEM_DAYS", LogRetentionSystemDays)
+	LogRetentionManageDays = GetEnvOrDefault("LOG_RETENTION_MANAGE_DAYS", LogRetentionManageDays)
+	LogRetentionTopupDays = GetEnvOrDefault("LOG_RETENTION_TOPUP_DAYS", LogRetentionTopupDays)
+	LogRetentionRefundDays = GetEnvOrDefault("LOG_RETENTION_REFUND_DAYS", LogRetentionRefundDays)
+	LogCleanupIntervalHours = GetEnvOrDefault("LOG_CLEANUP_INTERVAL_HOURS", LogCleanupIntervalHours)
+	if LogCleanupIntervalHours < 1 {
+		SysError("LOG_CLEANUP_INTERVAL_HOURS must be positive, using default value: 24")
+		LogCleanupIntervalHours = 24
+	}
+	LogCleanupBatchSize = GetEnvOrDefault("LOG_CLEANUP_BATCH_SIZE", LogCleanupBatchSize)
+	if LogCleanupBatchSize < 1 {
+		SysError("LOG_CLEANUP_BATCH_SIZE must be positive, using default value: 300")
+		LogCleanupBatchSize = 300
+	}
+	LogCleanupBatchSleepMS = GetEnvOrDefault("LOG_CLEANUP_BATCH_SLEEP_MS", LogCleanupBatchSleepMS)
+	if LogCleanupBatchSleepMS < 0 {
+		LogCleanupBatchSleepMS = 0
+	}
 
 	// Initialize string variables with GetEnvOrDefaultString
 	GeminiSafetySetting = GetEnvOrDefaultString("GEMINI_SAFETY_SETTING", "BLOCK_NONE")

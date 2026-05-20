@@ -144,6 +144,10 @@ export function SidebarModulesSection({
         title: t('Subscription Management'),
         description: t('Manage subscription plans and pricing.'),
       },
+      usage_summary: {
+        title: t('Usage Summary'),
+        description: t('Aggregated billing ledger summaries.'),
+      },
     },
   }
   const formDefaults = useMemo(() => config, [config])

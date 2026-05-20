@@ -56,10 +56,10 @@ func getRequestAttribution(c *gin.Context) requestAttribution {
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2"`
+	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2;index:idx_logs_type_created_id,priority:3;index:idx_logs_channel_type_created_id,priority:4"`
 	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type;index:idx_logs_vendor_profile_created,priority:2;index:idx_logs_biz_line_scene_created,priority:3"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type"`
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type;index:idx_logs_type_created_id,priority:2;index:idx_logs_channel_type_created_id,priority:3;index:idx_logs_vendor_profile_created,priority:2;index:idx_logs_biz_line_scene_created,priority:3"`
+	Type              int    `json:"type" gorm:"index:idx_created_at_type;index:idx_logs_type_created_id,priority:1;index:idx_logs_channel_type_created_id,priority:2"`
 	Content           string `json:"content"`
 	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
 	TokenName         string `json:"token_name" gorm:"index;default:''"`
@@ -69,7 +69,7 @@ type Log struct {
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index"`
+	ChannelId         int    `json:"channel" gorm:"index;index:idx_logs_channel_type_created_id,priority:1"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
@@ -113,6 +113,7 @@ func formatUserLogs(logs []*Log, startIdx int) {
 			// delete(otherMap, "reject_reason")
 			delete(otherMap, "stream_status")
 			delete(otherMap, "trace")
+			delete(otherMap, "trace_ref")
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].ProviderKeyId = 0
@@ -205,6 +206,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(channelId)
 	other, providerKeyId := appendProviderKeyInfo(c, other)
+	trace := prepareLogTrace(LogTypeError, other)
 	otherStr := common.MapToJsonStr(other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -253,6 +255,8 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	err := LOG_DB.Create(log).Error
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
+	} else {
+		persistLogTrace(c.Request.Context(), log, trace)
 	}
 }
 
@@ -402,6 +406,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	attribution := getRequestAttribution(c)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	vendorProfileId, vendorProfileCode := resolveVendorProfileByChannelID(params.ChannelId)
+	trace := prepareLogTrace(LogTypeConsume, params.Other)
 	otherStr := common.MapToJsonStr(params.Other)
 	// 判断是否需要记录 IP
 	needRecordIp := false
@@ -452,6 +457,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	} else {
+		persistLogTrace(c.Request.Context(), log, trace)
 		CreateUsageLedgerFromLog(log, params.Other)
 	}
 	if common.DataExportEnabled {
@@ -490,6 +496,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		params.Other = make(map[string]interface{})
 	}
 	params.Other["cost_ratio"] = costRatio
+	trace := prepareLogTrace(params.LogType, params.Other)
 	log := &Log{
 		UserId:    params.UserId,
 		Username:  username,
@@ -509,7 +516,10 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
 	} else if params.LogType == LogTypeConsume {
+		persistLogTrace(context.Background(), log, trace)
 		CreateUsageLedgerFromLog(log, params.Other)
+	} else {
+		persistLogTrace(context.Background(), log, trace)
 	}
 }
 
@@ -817,23 +827,53 @@ func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelNa
 
 func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
 	var total int64 = 0
+	if limit <= 0 {
+		limit = 100
+	}
 
 	for {
 		if nil != ctx.Err() {
 			return total, ctx.Err()
 		}
 
-		result := LOG_DB.Where("created_at < ?", targetTimestamp).Limit(limit).Delete(&Log{})
-		if nil != result.Error {
-			return total, result.Error
+		rowsAffected, err := deleteLogBatch(ctx, targetTimestamp, LogTypeUnknown, limit)
+		if err != nil {
+			return total, err
 		}
 
-		total += result.RowsAffected
+		total += rowsAffected
 
-		if result.RowsAffected < int64(limit) {
+		if rowsAffected < int64(limit) {
 			break
 		}
 	}
 
 	return total, nil
+}
+
+func DeleteLogsByTypeBefore(ctx context.Context, logType int, targetTimestamp int64, limit int) (int64, error) {
+	return deleteLogBatch(ctx, targetTimestamp, logType, limit)
+}
+
+func deleteLogBatch(ctx context.Context, targetTimestamp int64, logType int, limit int) (int64, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	query := LOG_DB.WithContext(ctx).Model(&Log{}).Where("created_at < ?", targetTimestamp)
+	if logType != LogTypeUnknown {
+		query = query.Where("type = ?", logType)
+	}
+
+	var ids []int
+	if err := query.Order("created_at asc, id asc").Limit(limit).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	if err := LOG_DB.WithContext(ctx).Where("log_id IN ?", ids).Delete(&LogTrace{}).Error; err != nil {
+		return 0, err
+	}
+	result := LOG_DB.WithContext(ctx).Where("id IN ?", ids).Delete(&Log{})
+	return result.RowsAffected, result.Error
 }

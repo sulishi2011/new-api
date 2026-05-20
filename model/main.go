@@ -345,6 +345,7 @@ func migrateDB() error {
 		&Ability{},
 		&ProviderKey{},
 		&Log{},
+		&LogTrace{},
 		&Midjourney{},
 		&TopUp{},
 		&QuotaData{},
@@ -400,6 +401,7 @@ func migrateDBFast() error {
 		{&Ability{}, "Ability"},
 		{&ProviderKey{}, "ProviderKey"},
 		{&Log{}, "Log"},
+		{&LogTrace{}, "LogTrace"},
 		{&Midjourney{}, "Midjourney"},
 		{&TopUp{}, "TopUp"},
 		{&QuotaData{}, "QuotaData"},
@@ -465,6 +467,9 @@ func migrateLOGDB() error {
 		return err
 	}
 	if err = LOG_DB.AutoMigrate(&Log{}); err != nil {
+		return err
+	}
+	if err = LOG_DB.AutoMigrate(&LogTrace{}); err != nil {
 		return err
 	}
 	return nil

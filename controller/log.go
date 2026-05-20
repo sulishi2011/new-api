@@ -125,6 +125,20 @@ func GetLogByKey(c *gin.Context) {
 	})
 }
 
+func GetLogTrace(c *gin.Context) {
+	logId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || logId <= 0 {
+		common.ApiErrorMsg(c, "无效的日志 ID")
+		return
+	}
+	payload, err := model.GetLogTracePayload(c.Request.Context(), logId)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, payload)
+}
+
 func GetLogsStat(c *gin.Context) {
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
