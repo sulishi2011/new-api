@@ -78,26 +78,29 @@ export function CommonLogsFilterBar<TData>(
   const [logType, setLogType] = useState<LogTypeValue | ''>('')
 
   useEffect(() => {
-    const next: Partial<CommonLogFilters> = {}
-    if (searchParams.startTime)
-      next.startTime = new Date(searchParams.startTime)
-    if (searchParams.endTime) next.endTime = new Date(searchParams.endTime)
-    if (searchParams.channel) next.channel = String(searchParams.channel)
-    if (searchParams.model) next.model = searchParams.model
-    if (searchParams.token) next.token = searchParams.token
-    if (searchParams.group) next.group = searchParams.group
-    if (searchParams.username) next.username = searchParams.username
-    if (searchParams.requestId) next.requestId = searchParams.requestId
-    if (searchParams.upstreamRequestId)
-      next.upstreamRequestId = searchParams.upstreamRequestId
-
-    if (Object.keys(next).length > 0) {
-      setFilters((prev) => ({ ...prev, ...next }))
+    const { start, end } = getDefaultTimeRange()
+    const next: CommonLogFilters = {
+      startTime: searchParams.startTime
+        ? new Date(searchParams.startTime)
+        : start,
+      endTime: searchParams.endTime ? new Date(searchParams.endTime) : end,
+      ...(searchParams.channel ? { channel: String(searchParams.channel) } : {}),
+      ...(searchParams.model ? { model: searchParams.model } : {}),
+      ...(searchParams.token ? { token: searchParams.token } : {}),
+      ...(searchParams.group ? { group: searchParams.group } : {}),
+      ...(searchParams.username ? { username: searchParams.username } : {}),
+      ...(searchParams.requestId ? { requestId: searchParams.requestId } : {}),
+      ...(searchParams.upstreamRequestId
+        ? { upstreamRequestId: searchParams.upstreamRequestId }
+        : {}),
     }
+    setFilters(next)
 
     const typeArr = searchParams.type
     if (Array.isArray(typeArr) && typeArr.length === 1) {
       setLogType(typeArr[0])
+    } else {
+      setLogType('')
     }
   }, [
     searchParams.startTime,

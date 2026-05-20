@@ -4,10 +4,14 @@ import (
 	"bytes"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -24,6 +28,22 @@ type WebhookPayload struct {
 	Timestamp int64         `json:"timestamp"`
 }
 
+type feishuWebhookPayload struct {
+	Timestamp string               `json:"timestamp,omitempty"`
+	Sign      string               `json:"sign,omitempty"`
+	MsgType   string               `json:"msg_type"`
+	Content   feishuWebhookContent `json:"content"`
+}
+
+type feishuWebhookContent struct {
+	Text string `json:"text"`
+}
+
+type feishuWebhookResponse struct {
+	Code int    `json:"code"`
+	Msg  string `json:"msg"`
+}
+
 // generateSignature 生成 webhook 签名
 func generateSignature(secret string, payload []byte) string {
 	h := hmac.New(sha256.New, []byte(secret))
@@ -31,15 +51,34 @@ func generateSignature(secret string, payload []byte) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// SendWebhookNotify 发送 webhook 通知
-func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error {
-	// 处理占位符
+func generateFeishuSignature(timestamp string, secret string) string {
+	stringToSign := timestamp + "\n" + secret
+	h := hmac.New(sha256.New, []byte(stringToSign))
+	return base64.StdEncoding.EncodeToString(h.Sum(nil))
+}
+
+func isFeishuWebhookURL(webhookURL string) bool {
+	parsed, err := url.Parse(webhookURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host != "open.feishu.cn" && host != "open.larksuite.com" {
+		return false
+	}
+	return strings.HasPrefix(parsed.EscapedPath(), "/open-apis/bot/v2/hook/") ||
+		strings.HasPrefix(parsed.EscapedPath(), "/open-apis/bot/hook/")
+}
+
+func renderNotifyContent(data dto.Notify) string {
 	content := data.Content
 	for _, value := range data.Values {
 		content = fmt.Sprintf(content, value)
 	}
+	return content
+}
 
-	// 构建 webhook 负载
+func buildGenericWebhookPayload(data dto.Notify, content string) ([]byte, error) {
 	payload := WebhookPayload{
 		Type:      data.Type,
 		Title:     data.Title,
@@ -47,9 +86,64 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		Values:    data.Values,
 		Timestamp: time.Now().Unix(),
 	}
+	return common.Marshal(payload)
+}
+
+func buildFeishuWebhookPayload(secret string, data dto.Notify, content string) ([]byte, error) {
+	text := strings.TrimSpace(data.Title)
+	if strings.TrimSpace(content) != "" {
+		if text != "" {
+			text += "\n"
+		}
+		text += strings.TrimSpace(content)
+	}
+
+	payload := feishuWebhookPayload{
+		MsgType: "text",
+		Content: feishuWebhookContent{Text: text},
+	}
+	if secret != "" {
+		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
+		payload.Timestamp = timestamp
+		payload.Sign = generateFeishuSignature(timestamp, secret)
+	}
+	return common.Marshal(payload)
+}
+
+func checkWebhookResponse(resp *http.Response, feishu bool) error {
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("webhook request failed with status code: %d, body: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	if !feishu || len(bytes.TrimSpace(body)) == 0 {
+		return nil
+	}
+
+	var feishuResp feishuWebhookResponse
+	if err := common.Unmarshal(body, &feishuResp); err != nil {
+		return fmt.Errorf("failed to parse feishu webhook response: %v", err)
+	}
+	if feishuResp.Code != 0 {
+		return fmt.Errorf("feishu webhook request failed with code %d: %s", feishuResp.Code, feishuResp.Msg)
+	}
+	return nil
+}
+
+// SendWebhookNotify 发送 webhook 通知
+func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error {
+	// 处理占位符
+	content := renderNotifyContent(data)
+	secret = strings.TrimSpace(secret)
+	feishu := isFeishuWebhookURL(webhookURL)
 
 	// 序列化负载
-	payloadBytes, err := json.Marshal(payload)
+	var payloadBytes []byte
+	var err error
+	if feishu {
+		payloadBytes, err = buildFeishuWebhookPayload(secret, data, content)
+	} else {
+		payloadBytes, err = buildGenericWebhookPayload(data, content)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to marshal webhook payload: %v", err)
 	}
@@ -71,7 +165,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		}
 
 		// 如果有secret，添加签名到headers
-		if secret != "" {
+		if secret != "" && !feishu {
 			signature := generateSignature(secret, payloadBytes)
 			workerReq.Headers["X-Webhook-Signature"] = signature
 			workerReq.Headers["Authorization"] = "Bearer " + secret
@@ -82,11 +176,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 			return fmt.Errorf("failed to send webhook request through worker: %v", err)
 		}
 		defer resp.Body.Close()
-
-		// 检查响应状态
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("webhook request failed with status code: %d", resp.StatusCode)
-		}
+		return checkWebhookResponse(resp, feishu)
 	} else {
 		// SSRF防护：验证Webhook URL（非Worker模式）
 		fetchSetting := system_setting.GetFetchSetting()
@@ -103,7 +193,7 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 		req.Header.Set("Content-Type", "application/json")
 
 		// 如果有 secret，生成签名
-		if secret != "" {
+		if secret != "" && !feishu {
 			signature := generateSignature(secret, payloadBytes)
 			req.Header.Set("X-Webhook-Signature", signature)
 		}
@@ -115,12 +205,6 @@ func SendWebhookNotify(webhookURL string, secret string, data dto.Notify) error 
 			return fmt.Errorf("failed to send webhook request: %v", err)
 		}
 		defer resp.Body.Close()
-
-		// 检查响应状态
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("webhook request failed with status code: %d", resp.StatusCode)
-		}
+		return checkWebhookResponse(resp, feishu)
 	}
-
-	return nil
 }
