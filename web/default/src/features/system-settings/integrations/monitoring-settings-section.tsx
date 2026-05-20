@@ -363,12 +363,6 @@ export function MonitoringSettingsSection({
   const failureRateAutoDisableEnabled = form.watch(
     'monitor_setting.channel_failure_rate_disable_enabled'
   )
-  const requestFailureWebhookEnabled = form.watch(
-    'monitor_setting.request_failure_webhook_enabled'
-  )
-  const channelDisabledWebhookEnabled = form.watch(
-    'monitor_setting.channel_disabled_webhook_enabled'
-  )
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -754,111 +748,105 @@ export function MonitoringSettingsSection({
             />
           </div>
 
-          {requestFailureWebhookEnabled && (
-            <div className='grid gap-6 md:grid-cols-2'>
-              <FormField
-                control={form.control}
-                name='monitor_setting.request_failure_webhook_url'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Request failure Webhook URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('https://example.com/webhook')}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                        name={field.name}
-                        onBlur={field.onBlur}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('Webhook URL must start with https://')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='monitor_setting.request_failure_webhook_url'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Request failure Webhook URL')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('https://example.com/webhook')}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Webhook URL must start with https://')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name='monitor_setting.request_failure_webhook_secret'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Request failure Webhook secret')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        type='password'
-                        placeholder={t(
-                          'Webhook signing secret (leave blank unless updating)'
-                        )}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                        name={field.name}
-                        onBlur={field.onBlur}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
+            <FormField
+              control={form.control}
+              name='monitor_setting.request_failure_webhook_secret'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Request failure Webhook secret')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='password'
+                      placeholder={t(
+                        'Webhook signing secret (leave blank unless updating)'
+                      )}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
-          {channelDisabledWebhookEnabled && (
-            <div className='grid gap-6 md:grid-cols-2'>
-              <FormField
-                control={form.control}
-                name='monitor_setting.channel_disabled_webhook_url'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Channel disabled Webhook URL')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder={t('https://example.com/webhook')}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                        name={field.name}
-                        onBlur={field.onBlur}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t('Webhook URL must start with https://')}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='monitor_setting.channel_disabled_webhook_url'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Channel disabled Webhook URL')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      placeholder={t('https://example.com/webhook')}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    {t('Webhook URL must start with https://')}
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
 
-              <FormField
-                control={form.control}
-                name='monitor_setting.channel_disabled_webhook_secret'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t('Channel disabled Webhook secret')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type='password'
-                        placeholder={t(
-                          'Webhook signing secret (leave blank unless updating)'
-                        )}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                        name={field.name}
-                        onBlur={field.onBlur}
-                        ref={field.ref}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-          )}
+            <FormField
+              control={form.control}
+              name='monitor_setting.channel_disabled_webhook_secret'
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t('Channel disabled Webhook secret')}</FormLabel>
+                  <FormControl>
+                    <Input
+                      type='password'
+                      placeholder={t(
+                        'Webhook signing secret (leave blank unless updating)'
+                      )}
+                      value={field.value}
+                      onChange={(event) => field.onChange(event.target.value)}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      ref={field.ref}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+          </div>
 
           <FormField
             control={form.control}

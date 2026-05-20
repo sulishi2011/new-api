@@ -139,7 +139,7 @@ func GetChannel(group string, model string, retry int) (*Channel, error) {
 	} else {
 		return nil, nil
 	}
-	err = DB.First(&channel, "id = ?", channel.Id).Error
+	err = DB.Preload("VendorProfile").First(&channel, "id = ?", channel.Id).Error
 	if err == nil && !channel.IsEnabled() {
 		return nil, nil
 	}

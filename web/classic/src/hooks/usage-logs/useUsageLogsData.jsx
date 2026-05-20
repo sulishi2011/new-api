@@ -23,7 +23,6 @@ import { Button, Modal } from '@douyinfe/semi-ui';
 import { useLocation } from 'react-router-dom';
 import {
   API,
-  getTodayStartTimestamp,
   isAdmin,
   showError,
   showSuccess,
@@ -43,6 +42,11 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import ParamOverrideEntry from '../../components/table/usage-logs/components/ParamOverrideEntry';
+
+const getDefaultLogDateRange = () => {
+  const now = Date.now() / 1000;
+  return [timestamp2string(now - 3600), timestamp2string(now + 3600)];
+};
 
 export const useLogsData = () => {
   const { t } = useTranslation();
@@ -95,7 +99,6 @@ export const useLogsData = () => {
 
   // Form state
   const [formApi, setFormApi] = useState(null);
-  let now = new Date();
   const queryPrefill = useMemo(() => {
     const searchParams = new URLSearchParams(location.search);
     return {
@@ -119,10 +122,7 @@ export const useLogsData = () => {
     biz_scene: '',
     user_tier: '',
     feature: '',
-    dateRange: [
-      timestamp2string(getTodayStartTimestamp()),
-      timestamp2string(now.getTime() / 1000 + 3600),
-    ],
+    dateRange: getDefaultLogDateRange(),
     logType: '0',
   };
 
@@ -258,8 +258,7 @@ export const useLogsData = () => {
   const getFormValues = () => {
     const formValues = formApi ? formApi.getValues() : formInitValues;
 
-    let start_timestamp = timestamp2string(getTodayStartTimestamp());
-    let end_timestamp = timestamp2string(now.getTime() / 1000 + 3600);
+    let [start_timestamp, end_timestamp] = getDefaultLogDateRange();
 
     if (
       formValues.dateRange &&

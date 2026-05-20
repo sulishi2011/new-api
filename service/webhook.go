@@ -29,20 +29,57 @@ type WebhookPayload struct {
 }
 
 type feishuWebhookPayload struct {
-	Timestamp string               `json:"timestamp,omitempty"`
-	Sign      string               `json:"sign,omitempty"`
-	MsgType   string               `json:"msg_type"`
-	Content   feishuWebhookContent `json:"content"`
+	Timestamp string                `json:"timestamp,omitempty"`
+	Sign      string                `json:"sign,omitempty"`
+	MsgType   string                `json:"msg_type"`
+	Content   *feishuWebhookContent `json:"content,omitempty"`
+	Card      *feishuWebhookCard    `json:"card,omitempty"`
 }
 
 type feishuWebhookContent struct {
 	Text string `json:"text"`
 }
 
+type feishuWebhookCard struct {
+	Config   feishuWebhookCardConfig    `json:"config"`
+	Header   feishuWebhookCardHeader    `json:"header"`
+	Elements []feishuWebhookCardElement `json:"elements"`
+}
+
+type feishuWebhookCardConfig struct {
+	WideScreenMode bool `json:"wide_screen_mode"`
+}
+
+type feishuWebhookCardHeader struct {
+	Template string            `json:"template,omitempty"`
+	Title    feishuWebhookText `json:"title"`
+}
+
+type feishuWebhookCardElement struct {
+	Tag    string               `json:"tag"`
+	Text   *feishuWebhookText   `json:"text,omitempty"`
+	Fields []feishuWebhookField `json:"fields,omitempty"`
+}
+
+type feishuWebhookField struct {
+	IsShort bool              `json:"is_short"`
+	Text    feishuWebhookText `json:"text"`
+}
+
+type feishuWebhookText struct {
+	Tag     string `json:"tag"`
+	Content string `json:"content"`
+}
+
 type feishuWebhookResponse struct {
 	Code int    `json:"code"`
 	Msg  string `json:"msg"`
 }
+
+const (
+	feishuFieldValueMaxRunes  = 80
+	feishuDetailValueMaxRunes = 240
+)
 
 // generateSignature 生成 webhook 签名
 func generateSignature(secret string, payload []byte) string {
@@ -90,17 +127,9 @@ func buildGenericWebhookPayload(data dto.Notify, content string) ([]byte, error)
 }
 
 func buildFeishuWebhookPayload(secret string, data dto.Notify, content string) ([]byte, error) {
-	text := strings.TrimSpace(data.Title)
-	if strings.TrimSpace(content) != "" {
-		if text != "" {
-			text += "\n"
-		}
-		text += strings.TrimSpace(content)
-	}
-
 	payload := feishuWebhookPayload{
-		MsgType: "text",
-		Content: feishuWebhookContent{Text: text},
+		MsgType: "interactive",
+		Card:    buildFeishuWebhookCard(data, content),
 	}
 	if secret != "" {
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
@@ -108,6 +137,171 @@ func buildFeishuWebhookPayload(secret string, data dto.Notify, content string) (
 		payload.Sign = generateFeishuSignature(timestamp, secret)
 	}
 	return common.Marshal(payload)
+}
+
+func buildFeishuWebhookCard(data dto.Notify, content string) *feishuWebhookCard {
+	title := strings.TrimSpace(data.Title)
+	if title == "" {
+		title = notifyTypeLabel(data.Type)
+	}
+
+	card := &feishuWebhookCard{
+		Config: feishuWebhookCardConfig{
+			WideScreenMode: true,
+		},
+		Header: feishuWebhookCardHeader{
+			Template: feishuCardTemplate(data.Type),
+			Title: feishuWebhookText{
+				Tag:     "plain_text",
+				Content: title,
+			},
+		},
+		Elements: []feishuWebhookCardElement{},
+	}
+
+	compactFields, detailFields := splitFeishuFields(data.Fields)
+	compactFields = append([]dto.NotifyField{
+		{Label: "时间", Value: time.Now().Format("01-02 15:04:05 MST")},
+	}, compactFields...)
+	if len(compactFields) > 0 {
+		card.Elements = append(card.Elements, feishuSummaryDiv(compactFields))
+	}
+	for _, field := range detailFields {
+		if len(card.Elements) > 0 {
+			card.Elements = append(card.Elements, feishuHr())
+		}
+		card.Elements = append(card.Elements, feishuDetailDiv(field))
+	}
+	if len(data.Fields) == 0 && strings.TrimSpace(content) != "" {
+		if len(card.Elements) > 0 {
+			card.Elements = append(card.Elements, feishuHr())
+		}
+		card.Elements = append(card.Elements, feishuMarkdownDiv(fmt.Sprintf(
+			"**详情**\n%s",
+			compactFeishuValue(content, feishuDetailValueMaxRunes),
+		)))
+	}
+	return card
+}
+
+func splitFeishuFields(fields []dto.NotifyField) ([]dto.NotifyField, []dto.NotifyField) {
+	compactFields := make([]dto.NotifyField, 0, len(fields))
+	detailFields := make([]dto.NotifyField, 0, len(fields))
+	for _, field := range fields {
+		switch strings.TrimSpace(field.Label) {
+		case "错误", "原因":
+			detailFields = append(detailFields, field)
+		case "通道":
+			continue
+		default:
+			compactFields = append(compactFields, field)
+		}
+	}
+	return compactFields, detailFields
+}
+
+func feishuSummaryDiv(fields []dto.NotifyField) feishuWebhookCardElement {
+	items := make([]string, 0, len(fields))
+	for _, field := range fields {
+		label := strings.TrimSpace(field.Label)
+		if label == "" {
+			continue
+		}
+		items = append(items, fmt.Sprintf("**%s** %s", compactFeishuLabel(label), compactFeishuValue(field.Value, feishuFieldValueMaxRunes)))
+	}
+	if len(items) == 0 {
+		return feishuMarkdownDiv("-")
+	}
+	lines := make([]string, 0, (len(items)+2)/3)
+	for start := 0; start < len(items); start += 3 {
+		end := start + 3
+		if end > len(items) {
+			end = len(items)
+		}
+		lines = append(lines, strings.Join(items[start:end], "   "))
+	}
+	return feishuMarkdownDiv(strings.Join(lines, "\n"))
+}
+
+func feishuDetailDiv(field dto.NotifyField) feishuWebhookCardElement {
+	label := strings.TrimSpace(field.Label)
+	value := compactFeishuValue(field.Value, feishuDetailValueMaxRunes)
+	return feishuMarkdownDiv(fmt.Sprintf("**%s**\n%s", label, value))
+}
+
+func feishuMarkdownDiv(content string) feishuWebhookCardElement {
+	return feishuWebhookCardElement{
+		Tag: "div",
+		Text: &feishuWebhookText{
+			Tag:     "lark_md",
+			Content: content,
+		},
+	}
+}
+
+func feishuHr() feishuWebhookCardElement {
+	return feishuWebhookCardElement{Tag: "hr"}
+}
+
+func feishuCardTemplate(notifyType string) string {
+	switch notifyType {
+	case dto.NotifyTypeChannelRequestFailure:
+		return "red"
+	case dto.NotifyTypeChannelDisabled, dto.NotifyTypeQuotaExceed:
+		return "orange"
+	case dto.NotifyTypeChannelTest:
+		return "green"
+	default:
+		return "blue"
+	}
+}
+
+func notifyTypeLabel(notifyType string) string {
+	switch notifyType {
+	case dto.NotifyTypeChannelRequestFailure:
+		return "请求失败"
+	case dto.NotifyTypeChannelDisabled:
+		return "渠道禁用"
+	case dto.NotifyTypeQuotaExceed:
+		return "额度告警"
+	case dto.NotifyTypeChannelUpdate:
+		return "渠道更新"
+	case dto.NotifyTypeChannelTest:
+		return "渠道测试"
+	default:
+		return notifyType
+	}
+}
+
+func trimFeishuValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
+	}
+	return value
+}
+
+func compactFeishuValue(value string, maxRunes int) string {
+	value = trimFeishuValue(strings.Join(strings.Fields(value), " "))
+	if value == "-" || maxRunes <= 0 {
+		return value
+	}
+	runes := []rune(value)
+	if len(runes) <= maxRunes {
+		return value
+	}
+	return string(runes[:maxRunes]) + "..."
+}
+
+func compactFeishuLabel(label string) string {
+	switch label {
+	case "请求路径":
+		return "路径"
+	case "重试序号":
+		return "重试"
+	default:
+		return label
+	}
 }
 
 func checkWebhookResponse(resp *http.Response, feishu bool) error {

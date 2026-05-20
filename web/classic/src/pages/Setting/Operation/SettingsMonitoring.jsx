@@ -441,75 +441,70 @@ export default function SettingsMonitoring(props) {
                 />
               </Col>
             </Row>
-            {inputs['monitor_setting.request_failure_webhook_enabled'] && (
-              <Row gutter={16}>
-                <Col xs={24} sm={12}>
-                  <Form.Input
-                    field={'monitor_setting.request_failure_webhook_url'}
-                    label={t('请求失败 Webhook 地址')}
-                    placeholder={t(
-                      '请输入Webhook地址，例如: https://example.com/webhook',
-                    )}
-                    extraText={t('每次上游请求失败都会异步发送通知')}
-                    onChange={(value) =>
-                      setInputs({
-                        ...inputs,
-                        'monitor_setting.request_failure_webhook_url': value,
-                      })
-                    }
-                  />
-                </Col>
-                <Col xs={24} sm={12}>
-                  <Form.Input
-                    field={'monitor_setting.request_failure_webhook_secret'}
-                    label={t('请求失败 Webhook 密钥')}
-                    placeholder={t('留空表示不修改')}
-                    mode='password'
-                    onChange={(value) =>
-                      setInputs({
-                        ...inputs,
-                        'monitor_setting.request_failure_webhook_secret': value,
-                      })
-                    }
-                  />
-                </Col>
-              </Row>
-            )}
-            {inputs['monitor_setting.channel_disabled_webhook_enabled'] && (
-              <Row gutter={16}>
-                <Col xs={24} sm={12}>
-                  <Form.Input
-                    field={'monitor_setting.channel_disabled_webhook_url'}
-                    label={t('渠道禁用 Webhook 地址')}
-                    placeholder={t(
-                      '请输入Webhook地址，例如: https://example.com/webhook',
-                    )}
-                    extraText={t('渠道被自动禁用后会异步发送通知')}
-                    onChange={(value) =>
-                      setInputs({
-                        ...inputs,
-                        'monitor_setting.channel_disabled_webhook_url': value,
-                      })
-                    }
-                  />
-                </Col>
-                <Col xs={24} sm={12}>
-                  <Form.Input
-                    field={'monitor_setting.channel_disabled_webhook_secret'}
-                    label={t('渠道禁用 Webhook 密钥')}
-                    placeholder={t('留空表示不修改')}
-                    mode='password'
-                    onChange={(value) =>
-                      setInputs({
-                        ...inputs,
-                        'monitor_setting.channel_disabled_webhook_secret':
-                          value,
-                      })
-                    }
-                  />
-                </Col>
-              </Row>
-            )}
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Input
+                  field={'monitor_setting.request_failure_webhook_url'}
+                  label={t('请求失败 Webhook 地址')}
+                  placeholder={t(
+                    '请输入Webhook地址，例如: https://example.com/webhook',
+                  )}
+                  extraText={t('每次上游请求失败都会异步发送通知')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.request_failure_webhook_url': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Input
+                  field={'monitor_setting.request_failure_webhook_secret'}
+                  label={t('请求失败 Webhook 密钥')}
+                  placeholder={t('留空表示不修改')}
+                  mode='password'
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.request_failure_webhook_secret': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
+            <Row gutter={16}>
+              <Col xs={24} sm={12}>
+                <Form.Input
+                  field={'monitor_setting.channel_disabled_webhook_url'}
+                  label={t('渠道禁用 Webhook 地址')}
+                  placeholder={t(
+                    '请输入Webhook地址，例如: https://example.com/webhook',
+                  )}
+                  extraText={t('渠道被自动禁用后会异步发送通知')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.channel_disabled_webhook_url': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Input
+                  field={'monitor_setting.channel_disabled_webhook_secret'}
+                  label={t('渠道禁用 Webhook 密钥')}
+                  placeholder={t('留空表示不修改')}
+                  mode='password'
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.channel_disabled_webhook_secret': value,
+                    })
+                  }
+                />
+              </Col>
+            </Row>
             <Row gutter={16}>
               <Col xs={24} sm={16}>
                 <HttpStatusCodeRulesInput

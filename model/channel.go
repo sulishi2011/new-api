@@ -85,6 +85,13 @@ func ChannelVendorProfileIdValue(vendorProfileId *int) int {
 	return *vendorProfileId
 }
 
+func (channel *Channel) GetVendorProfileCode() string {
+	if channel == nil || channel.VendorProfile == nil {
+		return ""
+	}
+	return strings.TrimSpace(channel.VendorProfile.Code)
+}
+
 func ChannelVendorProfileIdDBValue(vendorProfileId *int) interface{} {
 	if normalized := NormalizeChannelVendorProfileId(vendorProfileId); normalized != nil {
 		return *normalized

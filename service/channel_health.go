@@ -106,9 +106,14 @@ func NotifyChannelDisabledWebhook(channelError types.ChannelError, reason string
 		return
 	}
 
-	title := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
-	content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
-	notify := dto.NewNotify(dto.NotifyTypeChannelDisabled, title, content, nil)
+	channelLabel := formatChannelLabel(channelError)
+	title := fmt.Sprintf("%s已被禁用", channelLabel)
+	content := fmt.Sprintf("%s已被禁用，原因：%s", channelLabel, reason)
+	fields := []dto.NotifyField{
+		{Label: "通道", Value: channelLabel},
+		{Label: "原因", Value: reason},
+	}
+	notify := dto.NewNotifyWithFields(dto.NotifyTypeChannelDisabled, title, content, nil, fields)
 	sendMonitorWebhookAsync(webhookURL, setting.ChannelDisabledWebhookSecret, notify, "channel disabled")
 }
 
@@ -136,18 +141,26 @@ func sendRequestFailureWebhookAsync(c *gin.Context, relayInfo *relaycommon.Relay
 	}
 
 	errText := err.MaskSensitiveErrorWithStatusCode()
-	title := fmt.Sprintf("通道「%s」（#%d）请求失败", channelError.ChannelName, channelError.ChannelId)
+	channelLabel := formatChannelLabel(channelError)
+	title := fmt.Sprintf("%s请求失败", channelLabel)
 	content := fmt.Sprintf(
-		"通道「%s」（#%d）请求失败，状态码：%d，模型：%s，路径：%s，重试序号：%d，错误：%s",
-		channelError.ChannelName,
-		channelError.ChannelId,
+		"%s请求失败，状态码：%d，模型：%s，路径：%s，重试序号：%d，错误：%s",
+		channelLabel,
 		err.StatusCode,
 		modelName,
 		requestPath,
 		retryIndex,
 		errText,
 	)
-	notify := dto.NewNotify(dto.NotifyTypeChannelRequestFailure, title, content, nil)
+	fields := []dto.NotifyField{
+		{Label: "通道", Value: channelLabel},
+		{Label: "状态码", Value: strconv.Itoa(err.StatusCode)},
+		{Label: "模型", Value: displayTextOrDash(modelName)},
+		{Label: "请求路径", Value: displayTextOrDash(requestPath)},
+		{Label: "重试序号", Value: strconv.Itoa(retryIndex)},
+		{Label: "错误", Value: errText},
+	}
+	notify := dto.NewNotifyWithFields(dto.NotifyTypeChannelRequestFailure, title, content, nil, fields)
 	sendMonitorWebhookAsync(webhookURL, setting.RequestFailureWebhookSecret, notify, "request failure")
 }
 
@@ -157,6 +170,26 @@ func sendMonitorWebhookAsync(webhookURL string, secret string, notify dto.Notify
 			common.SysLog(fmt.Sprintf("failed to send %s webhook: %s", label, err.Error()))
 		}
 	})
+}
+
+func formatChannelLabel(channelError types.ChannelError) string {
+	name := strings.TrimSpace(channelError.ChannelName)
+	if name == "" {
+		name = "-"
+	}
+	code := strings.TrimSpace(channelError.VendorProfileCode)
+	if code != "" {
+		return fmt.Sprintf("%s「%s」（#%d）", code, name, channelError.ChannelId)
+	}
+	return fmt.Sprintf("通道「%s」（#%d）", name, channelError.ChannelId)
+}
+
+func displayTextOrDash(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return "-"
+	}
+	return text
 }
 
 func normalizeChannelHealthWindowMinutes(windowMinutes int) int {
