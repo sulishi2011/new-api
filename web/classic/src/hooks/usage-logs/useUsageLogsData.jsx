@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Collapse, Modal } from '@douyinfe/semi-ui';
+import { Button, Modal } from '@douyinfe/semi-ui';
 import { useLocation } from 'react-router-dom';
 import {
   API,
@@ -43,116 +43,10 @@ import {
 import { ITEMS_PER_PAGE } from '../../constants';
 import { useTableCompactMode } from '../common/useTableCompactMode';
 import ParamOverrideEntry from '../../components/table/usage-logs/components/ParamOverrideEntry';
-import CodeViewer from '../../components/playground/CodeViewer';
 
 export const useLogsData = () => {
   const { t } = useTranslation();
   const location = useLocation();
-
-  const getTraceBodyText = (part) => {
-    if (!part) {
-      return '';
-    }
-    if (part.body) {
-      return part.body;
-    }
-    switch (part.storage_kind) {
-      case 'omitted_multipart':
-        return t('multipart 内容未内联展示');
-      case 'omitted_binary':
-        return t('二进制内容未内联展示');
-      case 'empty':
-        return t('空内容');
-      default:
-        return '';
-    }
-  };
-
-  const getTraceLanguage = (part) => {
-    const contentType = part?.content_type || '';
-    const body = part?.body || '';
-    if (
-      contentType.includes('json') ||
-      body.trim().startsWith('{') ||
-      body.trim().startsWith('[')
-    ) {
-      return 'json';
-    }
-    return 'text';
-  };
-
-  const getTraceHeadersText = (part) => {
-    if (!part?.headers || Object.keys(part.headers).length === 0) {
-      return '';
-    }
-    try {
-      return JSON.stringify(part.headers, null, 2);
-    } catch (e) {
-      return '';
-    }
-  };
-
-  const renderTraceSectionTitle = (label, marginTop = 0) => (
-    <div
-      style={{
-        marginTop,
-        marginBottom: 8,
-        color: 'var(--semi-color-text-1)',
-        fontSize: 12,
-        fontWeight: 600,
-      }}
-    >
-      {label}
-    </div>
-  );
-
-  const renderTraceViewer = (part, title, labels) => {
-    if (!part) {
-      return null;
-    }
-    const bodyText = getTraceBodyText(part);
-    const headersText = getTraceHeadersText(part);
-    const meta = [
-      part?.content_type || '',
-      part?.body_size >= 0 ? `${t('大小')} ${part.body_size} B` : '',
-      part?.truncated ? t('已截断') : '',
-    ]
-      .filter(Boolean)
-      .join(' · ');
-
-    return (
-      <div style={{ minWidth: 0, width: '100%', maxWidth: 900 }}>
-        {meta ? (
-          <div
-            style={{
-              marginBottom: 8,
-              color: 'var(--semi-color-text-2)',
-              fontSize: 12,
-            }}
-          >
-            {meta}
-          </div>
-        ) : null}
-        {headersText ? (
-          <Collapse keepDOM style={{ marginBottom: 12 }}>
-            <Collapse.Panel header={labels.headers} itemKey='headers'>
-              <CodeViewer
-                content={headersText}
-                title='preview'
-                language='json'
-              />
-            </Collapse.Panel>
-          </Collapse>
-        ) : null}
-        {renderTraceSectionTitle(labels.body, headersText ? 12 : 0)}
-        <CodeViewer
-          content={bodyText}
-          title={title}
-          language={getTraceLanguage(part)}
-        />
-      </div>
-    );
-  };
 
   // Define column keys for selection
   const COLUMN_KEYS = {
@@ -312,6 +206,8 @@ export const useLogsData = () => {
     useState(null);
   const [showParamOverrideModal, setShowParamOverrideModal] = useState(false);
   const [paramOverrideTarget, setParamOverrideTarget] = useState(null);
+  const [showTraceModal, setShowTraceModal] = useState(false);
+  const [traceTarget, setTraceTarget] = useState(null);
 
   // Initialize default column visibility
   const initDefaultColumns = () => {
@@ -508,6 +404,16 @@ export const useLogsData = () => {
       requestPath: other?.request_path || '',
     });
     setShowParamOverrideModal(true);
+  };
+
+  const openTraceModal = (log, other, event) => {
+    event?.stopPropagation?.();
+    setTraceTarget({
+      logId: log?.id,
+      requestId: log?.request_id || '',
+      inlineTrace: other?.trace || null,
+    });
+    setShowTraceModal(true);
   };
 
   // Format logs data
@@ -934,32 +840,19 @@ export const useLogsData = () => {
           });
         }
       }
-      if (isAdminUser && other?.trace?.upstream_request_id) {
+      if (isAdminUser && (other?.trace || other?.trace_ref)) {
         expandDataLocal.push({
-          key: t('上游请求 ID'),
-          value: other.trace.upstream_request_id,
-        });
-      }
-      if (isAdminUser && other?.trace?.status_code) {
-        expandDataLocal.push({
-          key: t('上游状态码'),
-          value: other.trace.status_code,
-        });
-      }
-      if (isAdminUser && (other?.trace?.request || other?.trace?.response)) {
-        expandDataLocal.push({
-          key: t('完整请求'),
-          value: renderTraceViewer(other?.trace?.request, 'request', {
-            headers: t('请求头'),
-            body: t('请求体'),
-          }),
-        });
-        expandDataLocal.push({
-          key: t('完整返回'),
-          value: renderTraceViewer(other?.trace?.response, 'response', {
-            headers: t('响应头'),
-            body: t('响应体'),
-          }),
+          key: t('请求 Trace'),
+          value: (
+            <Button
+              size='small'
+              theme='solid'
+              type='tertiary'
+              onClick={(event) => openTraceModal(logs[i], other, event)}
+            >
+              {t('查看 Trace')}
+            </Button>
+          ),
         });
       }
       expandDatesLocal[logs[i].key] = expandDataLocal;
@@ -1133,6 +1026,9 @@ export const useLogsData = () => {
     showParamOverrideModal,
     setShowParamOverrideModal,
     paramOverrideTarget,
+    showTraceModal,
+    setShowTraceModal,
+    traceTarget,
 
     // Functions
     loadLogs,
@@ -1145,6 +1041,7 @@ export const useLogsData = () => {
     hasExpandableRows,
     setLogType,
     openParamOverrideModal,
+    openTraceModal,
 
     // Translation
     t,

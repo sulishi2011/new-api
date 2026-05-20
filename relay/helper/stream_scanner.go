@@ -34,7 +34,7 @@ func getScannerBufferSize() int {
 	return DefaultMaxScannerBufferSize
 }
 
-func resolveStreamIdleTimeout(info *relaycommon.RelayInfo) time.Duration {
+func ResolveStreamIdleTimeout(info *relaycommon.RelayInfo) time.Duration {
 	if info != nil {
 		if timeout, ok := info.ChannelSetting.ResolveStreamIdleTimeoutOverride(); ok {
 			return timeout
@@ -64,7 +64,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		}
 	}()
 
-	streamingTimeout := resolveStreamIdleTimeout(info)
+	streamingTimeout := ResolveStreamIdleTimeout(info)
 
 	var (
 		stopChan     = make(chan bool, 3) // 增加缓冲区避免阻塞
@@ -231,7 +231,7 @@ func StreamScannerHandler(c *gin.Context, resp *http.Response, info *relaycommon
 		sr := newStreamResult(info.StreamStatus)
 		for data := range dataChan {
 			sr.reset()
-			info.AppendTraceResponseChunk("data: " + data + "\n\n")
+			info.AppendTraceResponseChunkParts("data: ", data, "\n\n")
 			writeMutex.Lock()
 			dataHandler(data, sr)
 			writeMutex.Unlock()

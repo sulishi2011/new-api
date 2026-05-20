@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useState } from 'react'
 import {
   Copy,
   Check,
@@ -29,6 +30,9 @@ import {
   ShieldCheck,
   UserCog,
   Info,
+  FileSearch,
+  Loader2,
+  RefreshCw,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
@@ -45,8 +49,13 @@ import {
 } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  CodeBlock,
+  CodeBlockCopyButton,
+} from '@/components/ai-elements/code-block'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { getLogTrace } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
@@ -64,7 +73,7 @@ import {
   isPerCallBilling,
   isTimingLogType,
 } from '../../lib/utils'
-import type { LogOtherData } from '../../types'
+import type { LogOtherData, LogTracePart, LogTracePayload } from '../../types'
 
 function timingTextColorClass(
   variant: 'success' | 'warning' | 'danger'
@@ -126,6 +135,108 @@ function DetailSection(props: {
       >
         {props.children}
       </div>
+    </div>
+  )
+}
+
+function getTraceBodyText(
+  part: LogTracePart | undefined,
+  t: (key: string) => string
+): string {
+  if (!part) return ''
+  if (part.body) return part.body
+  switch (part.storage_kind) {
+    case 'omitted_multipart':
+      return t('Multipart content is not inlined')
+    case 'omitted_binary':
+      return t('Binary content is not inlined')
+    case 'empty':
+      return t('Empty content')
+    default:
+      return ''
+  }
+}
+
+function getTraceLanguage(part: LogTracePart | undefined): 'json' | 'markdown' {
+  const contentType = part?.content_type || ''
+  const body = part?.body || ''
+  if (
+    contentType.includes('json') ||
+    body.trim().startsWith('{') ||
+    body.trim().startsWith('[')
+  ) {
+    return 'json'
+  }
+  return 'markdown'
+}
+
+function getTraceHeadersText(part: LogTracePart | undefined): string {
+  if (!part?.headers || Object.keys(part.headers).length === 0) return ''
+  try {
+    return JSON.stringify(part.headers, null, 2)
+  } catch {
+    return ''
+  }
+}
+
+function TraceCodeBlock(props: {
+  label: string
+  content: string
+  language: 'json' | 'markdown'
+}) {
+  if (!props.content) return null
+  return (
+    <div className='min-w-0 space-y-1'>
+      <Label className='text-muted-foreground text-xs font-medium'>
+        {props.label}
+      </Label>
+      <CodeBlock
+        code={props.content}
+        language={props.language}
+        className='max-h-80 overflow-auto'
+      >
+        <CodeBlockCopyButton />
+      </CodeBlock>
+    </div>
+  )
+}
+
+function TracePartViewer(props: {
+  part: LogTracePart | undefined
+  title: string
+  headersLabel: string
+  bodyLabel: string
+}) {
+  const { t } = useTranslation()
+  const { part } = props
+  if (!part) return null
+
+  const headersText = getTraceHeadersText(part)
+  const bodyText = getTraceBodyText(part, t)
+  const meta = [
+    part.content_type || '',
+    part.body_size != null ? `${t('Size')} ${part.body_size} B` : '',
+    part.truncated ? t('Truncated') : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+
+  return (
+    <div className='min-w-0 space-y-2'>
+      <div className='flex min-w-0 flex-wrap items-center gap-2'>
+        <Label className='text-xs font-semibold'>{props.title}</Label>
+        {meta && <span className='text-muted-foreground text-xs'>{meta}</span>}
+      </div>
+      <TraceCodeBlock
+        label={props.headersLabel}
+        content={headersText}
+        language='json'
+      />
+      <TraceCodeBlock
+        label={props.bodyLabel}
+        content={bodyText}
+        language={getTraceLanguage(part)}
+      />
     </div>
   )
 }
@@ -391,6 +502,133 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   )
 }
 
+function LogTraceSection(props: { log: UsageLog; other: LogOtherData | null }) {
+  const { t } = useTranslation()
+  const inlineTrace = props.other?.trace
+  const hasTrace = Boolean(inlineTrace || props.other?.trace_ref)
+  const createInlinePayload = (): LogTracePayload | null =>
+    inlineTrace
+      ? {
+          log_id: props.log.id,
+          request_id: props.log.request_id,
+          upstream_request_id: props.log.upstream_request_id,
+          trace: inlineTrace,
+        }
+      : null
+  const [payload, setPayload] = useState<LogTracePayload | null>(
+    createInlinePayload
+  )
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setPayload(createInlinePayload())
+    setLoading(false)
+    setError(null)
+  }, [props.log.id, inlineTrace])
+
+  if (!hasTrace) return null
+
+  const trace = payload?.trace
+  const loadTrace = async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await getLogTrace(props.log.id)
+      if (res.success && res.data) {
+        setPayload(res.data)
+      } else {
+        setError(res.message || t('Failed to load trace'))
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : t('Failed to load trace'))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <DetailSection
+      icon={<FileSearch className='size-3.5' aria-hidden='true' />}
+      label={t('Trace')}
+    >
+      {!trace ? (
+        <div className='flex min-w-0 flex-wrap items-center gap-2'>
+          <Button
+            size='sm'
+            variant='outline'
+            onClick={loadTrace}
+            disabled={loading}
+          >
+            {loading ? (
+              <Loader2 className='mr-1.5 size-3.5 animate-spin' />
+            ) : (
+              <FileSearch className='mr-1.5 size-3.5' />
+            )}
+            {t('View Trace')}
+          </Button>
+          {props.other?.trace_ref?.status && (
+            <span className='text-muted-foreground text-xs'>
+              {props.other.trace_ref.status}
+            </span>
+          )}
+          {error && <span className='text-xs text-red-500'>{error}</span>}
+        </div>
+      ) : (
+        <div className='min-w-0 space-y-3'>
+          <div className='flex min-w-0 flex-wrap items-center gap-2'>
+            {trace.status_code != null && (
+              <StatusBadge
+                label={`${t('Status Code')} ${trace.status_code}`}
+                variant={trace.status_code >= 400 ? 'red' : 'green'}
+                size='sm'
+                copyable={false}
+              />
+            )}
+            {(trace.upstream_request_id || payload.upstream_request_id) && (
+              <StatusBadge
+                label={`${t('Upstream Request ID')}: ${trace.upstream_request_id || payload.upstream_request_id}`}
+                variant='neutral'
+                size='sm'
+                copyText={
+                  trace.upstream_request_id || payload.upstream_request_id
+                }
+              />
+            )}
+            {props.other?.trace_ref && (
+              <Button
+                size='icon'
+                variant='ghost'
+                onClick={loadTrace}
+                disabled={loading}
+                title={t('Reload Trace')}
+                aria-label={t('Reload Trace')}
+              >
+                <RefreshCw
+                  className={cn('size-3.5', loading && 'animate-spin')}
+                />
+              </Button>
+            )}
+          </div>
+          <TracePartViewer
+            part={trace.request}
+            title={t('Request')}
+            headersLabel={t('Request Headers')}
+            bodyLabel={t('Request Body')}
+          />
+          <TracePartViewer
+            part={trace.response}
+            title={t('Response')}
+            headersLabel={t('Response Headers')}
+            bodyLabel={t('Response Body')}
+          />
+          {error && <p className='text-xs text-red-500'>{error}</p>}
+        </div>
+      )}
+    </DetailSection>
+  )
+}
+
 interface DetailsDialogProps {
   log: UsageLog
   isAdmin: boolean
@@ -617,6 +855,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
                 />
               )}
             </div>
+
+            {props.isAdmin && <LogTraceSection log={props.log} other={other} />}
 
             {/* Request conversion (admin only, not for refund) */}
             {showConversion && (

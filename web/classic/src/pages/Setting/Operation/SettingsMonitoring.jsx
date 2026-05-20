@@ -26,12 +26,20 @@ import {
   showSuccess,
   showWarning,
   parseHttpStatusCodeRules,
+  toBoolean,
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 import HttpStatusCodeRulesInput from '../../../components/settings/HttpStatusCodeRulesInput';
 
 const secretOptionKeys = new Set([
   'monitor_setting.request_failure_webhook_secret',
+  'monitor_setting.channel_disabled_webhook_secret',
+]);
+
+const trimOptionKeys = new Set([
+  'monitor_setting.request_failure_webhook_url',
+  'monitor_setting.request_failure_webhook_secret',
+  'monitor_setting.channel_disabled_webhook_url',
   'monitor_setting.channel_disabled_webhook_secret',
 ]);
 
@@ -58,6 +66,34 @@ const defaultMonitoringInputs = {
   'monitor_setting.auto_test_channel_minutes': 10,
 };
 
+function normalizeMonitoringInputs(values = {}) {
+  const normalized = { ...defaultMonitoringInputs };
+
+  for (const key of Object.keys(defaultMonitoringInputs)) {
+    const fallback = defaultMonitoringInputs[key];
+    const value = values[key];
+
+    if (typeof fallback === 'boolean') {
+      normalized[key] = toBoolean(value);
+      continue;
+    }
+
+    if (typeof fallback === 'number') {
+      const parsed = Number(value);
+      normalized[key] = Number.isFinite(parsed) ? parsed : fallback;
+      continue;
+    }
+
+    const stringValue =
+      value === undefined || value === null ? '' : String(value);
+    normalized[key] = trimOptionKeys.has(key)
+      ? stringValue.trim()
+      : stringValue;
+  }
+
+  return normalized;
+}
+
 export default function SettingsMonitoring(props) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -72,8 +108,17 @@ export default function SettingsMonitoring(props) {
   );
 
   function onSubmit() {
-    const updateArray = compareObjects(inputs, inputsRow).filter(
-      (item) => !(secretOptionKeys.has(item.key) && !inputs[item.key]),
+    const normalizedInputs = normalizeMonitoringInputs(inputs);
+    const normalizedBaseline = normalizeMonitoringInputs(inputsRow);
+    const updateArray = compareObjects(
+      normalizedInputs,
+      normalizedBaseline,
+    ).filter(
+      (item) =>
+        !(
+          secretOptionKeys.has(item.key) &&
+          !String(normalizedInputs[item.key] || '').trim()
+        ),
     );
     if (!updateArray.length) return showWarning(t('你似乎并没有修改什么'));
     if (!parsedAutoDisableStatusCodes.ok) {
@@ -92,20 +137,20 @@ export default function SettingsMonitoring(props) {
           : '';
       return showError(`${t('自动重试状态码格式不正确')}${details}`);
     }
-    const webhookValidation = validateWebhookSettings();
+    const webhookValidation = validateWebhookSettings(normalizedInputs);
     if (webhookValidation) {
       return showError(webhookValidation);
     }
     const requestQueue = updateArray.map((item) => {
       let value = '';
-      if (typeof inputs[item.key] === 'boolean') {
-        value = String(inputs[item.key]);
+      if (typeof normalizedInputs[item.key] === 'boolean') {
+        value = String(normalizedInputs[item.key]);
       } else {
         const normalizedMap = {
           AutomaticDisableStatusCodes: parsedAutoDisableStatusCodes.normalized,
           AutomaticRetryStatusCodes: parsedAutoRetryStatusCodes.normalized,
         };
-        value = normalizedMap[item.key] ?? inputs[item.key];
+        value = normalizedMap[item.key] ?? normalizedInputs[item.key];
       }
       return API.put('/api/option/', {
         key: item.key,
@@ -115,13 +160,21 @@ export default function SettingsMonitoring(props) {
     setLoading(true);
     Promise.all(requestQueue)
       .then((res) => {
-        if (requestQueue.length === 1) {
-          if (res.includes(undefined)) return;
-        } else if (requestQueue.length > 1) {
-          if (res.includes(undefined))
-            return showError(t('部分保存失败，请重试'));
+        const failedResponse = res.find((item) => !item?.data?.success);
+        if (failedResponse) {
+          return showError(
+            failedResponse?.data?.message || t('部分保存失败，请重试'),
+          );
         }
         showSuccess(t('保存成功'));
+        const nextInputs = {
+          ...normalizedInputs,
+          'monitor_setting.request_failure_webhook_secret': '',
+          'monitor_setting.channel_disabled_webhook_secret': '',
+        };
+        setInputs(nextInputs);
+        setInputsRow(structuredClone(nextInputs));
+        refForm.current?.setValues(nextInputs);
         props.refresh();
       })
       .catch(() => {
@@ -132,7 +185,7 @@ export default function SettingsMonitoring(props) {
       });
   }
 
-  function validateWebhookSettings() {
+  function validateWebhookSettings(values) {
     const configs = [
       {
         enabledKey: 'monitor_setting.request_failure_webhook_enabled',
@@ -146,10 +199,10 @@ export default function SettingsMonitoring(props) {
       },
     ];
     for (const config of configs) {
-      if (!inputs[config.enabledKey]) {
+      if (!values[config.enabledKey]) {
         continue;
       }
-      const rawUrl = String(inputs[config.urlKey] || '').trim();
+      const rawUrl = String(values[config.urlKey] || '').trim();
       if (rawUrl === '') {
         return `${config.label}${t('不能为空')}`;
       }
@@ -161,15 +214,10 @@ export default function SettingsMonitoring(props) {
   }
 
   useEffect(() => {
-    const currentInputs = { ...defaultMonitoringInputs };
-    for (let key in props.options) {
-      if (Object.keys(defaultMonitoringInputs).includes(key)) {
-        currentInputs[key] = props.options[key];
-      }
-    }
+    const currentInputs = normalizeMonitoringInputs(props.options);
     setInputs(currentInputs);
     setInputsRow(structuredClone(currentInputs));
-    refForm.current.setValues(currentInputs);
+    refForm.current?.setValues(currentInputs);
   }, [props.options]);
 
   return (

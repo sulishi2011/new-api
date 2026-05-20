@@ -169,6 +169,11 @@ export interface LogOtherData {
     end_error?: string
     errors?: string[]
   }
+  trace_ref?: {
+    backend?: string
+    status?: string
+  }
+  trace?: LogTracePayload['trace']
   // Violation fee fields
   violation_fee?: boolean
   violation_fee_code?: string
@@ -189,6 +194,39 @@ export interface LogOtherData {
   subscription_consumed?: number
   subscription_remain?: number
   subscription_total?: number
+}
+
+export interface LogTracePart {
+  headers?: Record<string, string[]>
+  body?: string
+  body_size?: number
+  content_type?: string
+  truncated?: boolean
+  storage_kind?: string
+}
+
+export interface LogTracePayload {
+  version?: number
+  log_id?: number
+  request_id?: string
+  external_request_id?: string
+  upstream_request_id?: string
+  created_at?: number
+  stored_at?: number
+  storage?: string
+  trace?: {
+    version?: number
+    request?: LogTracePart
+    response?: LogTracePart
+    upstream_request_id?: string
+    status_code?: number
+  }
+}
+
+export interface GetLogTraceResponse {
+  success: boolean
+  message?: string
+  data?: LogTracePayload
 }
 
 /**

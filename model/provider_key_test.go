@@ -24,12 +24,14 @@ func setupProviderKeyTestDB(t *testing.T) *gorm.DB {
 	oldUsingPostgreSQL := common.UsingPostgreSQL
 	oldRedisEnabled := common.RedisEnabled
 	oldLogConsumeEnabled := common.LogConsumeEnabled
+	oldMemoryCacheEnabled := common.MemoryCacheEnabled
 
 	common.UsingSQLite = true
 	common.UsingMySQL = false
 	common.UsingPostgreSQL = false
 	common.RedisEnabled = false
 	common.LogConsumeEnabled = true
+	common.MemoryCacheEnabled = false
 
 	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -39,7 +41,7 @@ func setupProviderKeyTestDB(t *testing.T) *gorm.DB {
 	DB = db
 	LOG_DB = db
 
-	if err := db.AutoMigrate(&ProviderKey{}, &User{}, &Log{}, &Channel{}); err != nil {
+	if err := db.AutoMigrate(&ProviderKey{}, &User{}, &Log{}, &Channel{}, &VendorProfile{}); err != nil {
 		t.Fatalf("failed to migrate provider key tables: %v", err)
 	}
 
@@ -51,6 +53,7 @@ func setupProviderKeyTestDB(t *testing.T) *gorm.DB {
 		common.UsingPostgreSQL = oldUsingPostgreSQL
 		common.RedisEnabled = oldRedisEnabled
 		common.LogConsumeEnabled = oldLogConsumeEnabled
+		common.MemoryCacheEnabled = oldMemoryCacheEnabled
 		sqlDB, err := db.DB()
 		if err == nil {
 			_ = sqlDB.Close()
@@ -198,5 +201,64 @@ func TestRecordConsumeLogStoresCostQuota(t *testing.T) {
 	}
 	if otherMap["cost_ratio"] != 0.8 {
 		t.Fatalf("expected cost ratio 0.8 in other, got %#v", otherMap["cost_ratio"])
+	}
+}
+
+func TestRecordConsumeLogUsesVendorProfileDiscountBeforeChannelCostRatio(t *testing.T) {
+	setupProviderKeyTestDB(t)
+
+	vendorDiscount := 0.5
+	profile := VendorProfile{
+		Code:         "openai-api-half",
+		VendorCode:   "openai",
+		VendorName:   "OpenAI",
+		PlatformType: "api",
+		DiscountRate: &vendorDiscount,
+	}
+	if err := profile.Insert(); err != nil {
+		t.Fatalf("failed to insert vendor profile: %v", err)
+	}
+
+	channelCostRatio := 0.8
+	channel := Channel{
+		Name:            "vendor-discount-channel",
+		Key:             "xai-cost-key-override",
+		Models:          "grok-test",
+		Group:           "default",
+		VendorProfileId: &profile.Id,
+	}
+	channel.SetSetting(dto.ChannelSettings{CostRatio: &channelCostRatio})
+	if err := DB.Create(&channel).Error; err != nil {
+		t.Fatalf("failed to insert channel: %v", err)
+	}
+
+	ctx := newProviderKeyLogContextWithCostRatio("xai-cost-key-override", "req-vendor-cost", channelCostRatio)
+	RecordConsumeLog(ctx, 1, RecordConsumeLogParams{
+		ChannelId: channel.Id,
+		ModelName: "grok-test",
+		TokenName: "unit-test",
+		Content:   "vendor cost request",
+		Group:     "default",
+		Quota:     200,
+		Other:     map[string]interface{}{},
+	})
+
+	var log Log
+	if err := LOG_DB.Order("id desc").First(&log).Error; err != nil {
+		t.Fatalf("failed to query latest log: %v", err)
+	}
+	if log.CostQuota == nil {
+		t.Fatal("expected cost quota to be stored")
+	}
+	if *log.CostQuota != 100 {
+		t.Fatalf("expected vendor-discounted cost quota 100, got %d", *log.CostQuota)
+	}
+
+	otherMap, err := common.StrToMap(log.Other)
+	if err != nil {
+		t.Fatalf("failed to parse log other: %v", err)
+	}
+	if otherMap["cost_ratio"] != vendorDiscount {
+		t.Fatalf("expected vendor discount cost ratio %.1f in other, got %#v", vendorDiscount, otherMap["cost_ratio"])
 	}
 }

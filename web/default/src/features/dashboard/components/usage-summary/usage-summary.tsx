@@ -31,7 +31,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
 import { formatNumber, formatQuota } from '@/lib/format'
-import { dateToUnixTimestamp, formatChartTime } from '@/lib/time'
+import { dateToUnixTimestamp, formatUtcBucketRange } from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -211,8 +211,8 @@ function useUsageSummaryColumns(
           <DataTableColumnHeader column={column} title={t('Bucket')} />
         ),
         cell: ({ row }) => (
-          <span className='font-mono text-xs'>
-            {formatChartTime(row.original.bucket_start, granularity)}
+          <span className='whitespace-nowrap font-mono text-xs'>
+            {formatUtcBucketRange(row.original.bucket_start, granularity)}
           </span>
         ),
         enableSorting: true,

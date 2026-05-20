@@ -177,6 +177,30 @@ export function formatChartTime(
 }
 
 /**
+ * Format a UTC aggregate bucket as an explicit half-open time range.
+ * Usage aggregates are bucketed in UTC on the backend, so table rows should not
+ * use local time or chart-axis short labels.
+ */
+export function formatUtcBucketRange(
+  timestamp: number,
+  granularity: TimeGranularity = 'day'
+): string {
+  if (!timestamp) return '-'
+
+  const start = dayjs.unix(timestamp).utc()
+  if (!start.isValid()) return '-'
+
+  const unit =
+    granularity === 'hour' ? 'hour' : granularity === 'week' ? 'week' : 'day'
+  const end = start.add(1, unit)
+  const endText = start.isSame(end, 'day')
+    ? end.format('HH:mm')
+    : end.format('YYYY-MM-DD HH:mm')
+
+  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} UTC`
+}
+
+/**
  * Add time duration to a date
  * @param months Number of months to add
  * @param days Number of days to add

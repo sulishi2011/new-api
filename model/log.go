@@ -331,17 +331,54 @@ func getChannelCostRatioByID(channelID int) float64 {
 	if err != nil {
 		return 1
 	}
+	if costRatio, ok := getVendorProfileCostRatio(channel); ok {
+		return costRatio
+	}
 	return normalizeCostRatio(channel.GetSetting().GetCostRatio())
 }
 
 func resolveChannelCostRatio(c *gin.Context, channelID int) float64 {
+	var channel *Channel
+	if channelID > 0 {
+		if cachedChannel, err := CacheGetChannel(channelID); err == nil {
+			channel = cachedChannel
+			if costRatio, ok := getVendorProfileCostRatio(channel); ok {
+				return costRatio
+			}
+		}
+	}
 	if c != nil {
 		channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting)
 		if ok {
 			return normalizeCostRatio(channelSetting.GetCostRatio())
 		}
 	}
-	return getChannelCostRatioByID(channelID)
+	if channel != nil {
+		return normalizeCostRatio(channel.GetSetting().GetCostRatio())
+	}
+	return 1
+}
+
+func getVendorProfileCostRatio(channel *Channel) (float64, bool) {
+	if channel == nil {
+		return 0, false
+	}
+	vendorProfileId := ChannelVendorProfileIdValue(channel.VendorProfileId)
+	if vendorProfileId <= 0 {
+		return 0, false
+	}
+	profile := channel.VendorProfile
+	if profile == nil || profile.Id == 0 {
+		var err error
+		profile, err = GetVendorProfileByID(vendorProfileId)
+		if err != nil || profile == nil {
+			return 0, false
+		}
+	}
+	if profile.DiscountRate == nil {
+		return 0, false
+	}
+	return normalizeCostRatio(*profile.DiscountRate), true
 }
 
 func resolveVendorProfileByChannelID(channelID int) (int, string) {

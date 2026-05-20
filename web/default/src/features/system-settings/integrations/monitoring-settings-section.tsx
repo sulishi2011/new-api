@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -61,9 +61,63 @@ const monitoringSchema = z
         .number()
         .int()
         .min(1, 'Interval must be at least 1 minute'),
+      channel_failure_rate_disable_enabled: z.boolean(),
+      channel_failure_rate_window_minutes: z.coerce
+        .number()
+        .int()
+        .min(1, 'Window must be at least 1 minute'),
+      channel_failure_rate_threshold: z.coerce
+        .number()
+        .min(1, 'Threshold must be at least 1%')
+        .max(100, 'Threshold cannot exceed 100%'),
+      channel_failure_rate_min_requests: z.coerce
+        .number()
+        .int()
+        .min(1, 'Minimum requests must be at least 1'),
+      request_failure_webhook_enabled: z.boolean(),
+      request_failure_webhook_url: z.string(),
+      request_failure_webhook_secret: z.string(),
+      channel_disabled_webhook_enabled: z.boolean(),
+      channel_disabled_webhook_url: z.string(),
+      channel_disabled_webhook_secret: z.string(),
     }),
   })
   .superRefine((values, ctx) => {
+    const validateWebhookUrl = (
+      enabled: boolean,
+      value: string,
+      path: Array<string>
+    ) => {
+      if (!enabled) return
+      const trimmed = value.trim()
+      if (!trimmed) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'Webhook URL is required when enabled',
+        })
+        return
+      }
+      if (!trimmed.startsWith('https://')) {
+        ctx.addIssue({
+          code: 'custom',
+          path,
+          message: 'Webhook URL must start with https://',
+        })
+      }
+    }
+
+    validateWebhookUrl(
+      values.monitor_setting.request_failure_webhook_enabled,
+      values.monitor_setting.request_failure_webhook_url,
+      ['monitor_setting', 'request_failure_webhook_url']
+    )
+    validateWebhookUrl(
+      values.monitor_setting.channel_disabled_webhook_enabled,
+      values.monitor_setting.channel_disabled_webhook_url,
+      ['monitor_setting', 'channel_disabled_webhook_url']
+    )
+
     const disableParsed = parseHttpStatusCodeRules(
       values.AutomaticDisableStatusCodes
     )
@@ -105,6 +159,16 @@ type MonitoringSettingsSectionProps = {
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
+    'monitor_setting.channel_failure_rate_disable_enabled': boolean
+    'monitor_setting.channel_failure_rate_window_minutes': number
+    'monitor_setting.channel_failure_rate_threshold': number
+    'monitor_setting.channel_failure_rate_min_requests': number
+    'monitor_setting.request_failure_webhook_enabled': boolean
+    'monitor_setting.request_failure_webhook_url': string
+    'monitor_setting.request_failure_webhook_secret': string
+    'monitor_setting.channel_disabled_webhook_enabled': boolean
+    'monitor_setting.channel_disabled_webhook_url': string
+    'monitor_setting.channel_disabled_webhook_secret': string
   }
 }
 
@@ -122,7 +186,22 @@ type NormalizedMonitoringValues = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.channel_failure_rate_disable_enabled': boolean
+  'monitor_setting.channel_failure_rate_window_minutes': number
+  'monitor_setting.channel_failure_rate_threshold': number
+  'monitor_setting.channel_failure_rate_min_requests': number
+  'monitor_setting.request_failure_webhook_enabled': boolean
+  'monitor_setting.request_failure_webhook_url': string
+  'monitor_setting.request_failure_webhook_secret': string
+  'monitor_setting.channel_disabled_webhook_enabled': boolean
+  'monitor_setting.channel_disabled_webhook_url': string
+  'monitor_setting.channel_disabled_webhook_secret': string
 }
+
+const secretOptionKeys = new Set<keyof NormalizedMonitoringValues>([
+  'monitor_setting.request_failure_webhook_secret',
+  'monitor_setting.channel_disabled_webhook_secret',
+])
 
 const buildFormDefaults = (
   defaults: MonitoringSettingsSectionProps['defaultValues']
@@ -141,6 +220,26 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
+    channel_failure_rate_disable_enabled:
+      defaults['monitor_setting.channel_failure_rate_disable_enabled'],
+    channel_failure_rate_window_minutes:
+      defaults['monitor_setting.channel_failure_rate_window_minutes'],
+    channel_failure_rate_threshold:
+      defaults['monitor_setting.channel_failure_rate_threshold'],
+    channel_failure_rate_min_requests:
+      defaults['monitor_setting.channel_failure_rate_min_requests'],
+    request_failure_webhook_enabled:
+      defaults['monitor_setting.request_failure_webhook_enabled'],
+    request_failure_webhook_url:
+      defaults['monitor_setting.request_failure_webhook_url'] ?? '',
+    request_failure_webhook_secret:
+      defaults['monitor_setting.request_failure_webhook_secret'] ?? '',
+    channel_disabled_webhook_enabled:
+      defaults['monitor_setting.channel_disabled_webhook_enabled'],
+    channel_disabled_webhook_url:
+      defaults['monitor_setting.channel_disabled_webhook_url'] ?? '',
+    channel_disabled_webhook_secret:
+      defaults['monitor_setting.channel_disabled_webhook_secret'] ?? '',
   },
 })
 
@@ -164,6 +263,30 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
+  'monitor_setting.channel_failure_rate_disable_enabled':
+    defaults['monitor_setting.channel_failure_rate_disable_enabled'],
+  'monitor_setting.channel_failure_rate_window_minutes':
+    defaults['monitor_setting.channel_failure_rate_window_minutes'],
+  'monitor_setting.channel_failure_rate_threshold':
+    defaults['monitor_setting.channel_failure_rate_threshold'],
+  'monitor_setting.channel_failure_rate_min_requests':
+    defaults['monitor_setting.channel_failure_rate_min_requests'],
+  'monitor_setting.request_failure_webhook_enabled':
+    defaults['monitor_setting.request_failure_webhook_enabled'],
+  'monitor_setting.request_failure_webhook_url': (
+    defaults['monitor_setting.request_failure_webhook_url'] ?? ''
+  ).trim(),
+  'monitor_setting.request_failure_webhook_secret': (
+    defaults['monitor_setting.request_failure_webhook_secret'] ?? ''
+  ).trim(),
+  'monitor_setting.channel_disabled_webhook_enabled':
+    defaults['monitor_setting.channel_disabled_webhook_enabled'],
+  'monitor_setting.channel_disabled_webhook_url': (
+    defaults['monitor_setting.channel_disabled_webhook_url'] ?? ''
+  ).trim(),
+  'monitor_setting.channel_disabled_webhook_secret': (
+    defaults['monitor_setting.channel_disabled_webhook_secret'] ?? ''
+  ).trim(),
 })
 
 const normalizeFormValues = (
@@ -186,6 +309,26 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
+  'monitor_setting.channel_failure_rate_disable_enabled':
+    values.monitor_setting.channel_failure_rate_disable_enabled,
+  'monitor_setting.channel_failure_rate_window_minutes':
+    values.monitor_setting.channel_failure_rate_window_minutes,
+  'monitor_setting.channel_failure_rate_threshold':
+    values.monitor_setting.channel_failure_rate_threshold,
+  'monitor_setting.channel_failure_rate_min_requests':
+    values.monitor_setting.channel_failure_rate_min_requests,
+  'monitor_setting.request_failure_webhook_enabled':
+    values.monitor_setting.request_failure_webhook_enabled,
+  'monitor_setting.request_failure_webhook_url':
+    values.monitor_setting.request_failure_webhook_url.trim(),
+  'monitor_setting.request_failure_webhook_secret':
+    values.monitor_setting.request_failure_webhook_secret.trim(),
+  'monitor_setting.channel_disabled_webhook_enabled':
+    values.monitor_setting.channel_disabled_webhook_enabled,
+  'monitor_setting.channel_disabled_webhook_url':
+    values.monitor_setting.channel_disabled_webhook_url.trim(),
+  'monitor_setting.channel_disabled_webhook_secret':
+    values.monitor_setting.channel_disabled_webhook_secret.trim(),
 })
 
 export function MonitoringSettingsSection({
@@ -193,9 +336,15 @@ export function MonitoringSettingsSection({
 }: MonitoringSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const baselineRef = useRef<NormalizedMonitoringValues>(
-    normalizeDefaults(defaultValues)
+  const normalizedDefaults = useMemo(
+    () => normalizeDefaults(defaultValues),
+    [defaultValues]
   )
+  const baselineRef = useRef<NormalizedMonitoringValues>(normalizedDefaults)
+
+  useEffect(() => {
+    baselineRef.current = normalizedDefaults
+  }, [normalizedDefaults])
 
   const formDefaults = useMemo(
     () => buildFormDefaults(defaultValues),
@@ -211,6 +360,15 @@ export function MonitoringSettingsSection({
 
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
+  const failureRateAutoDisableEnabled = form.watch(
+    'monitor_setting.channel_failure_rate_disable_enabled'
+  )
+  const requestFailureWebhookEnabled = form.watch(
+    'monitor_setting.request_failure_webhook_enabled'
+  )
+  const channelDisabledWebhookEnabled = form.watch(
+    'monitor_setting.channel_disabled_webhook_enabled'
+  )
   const autoDisableParsed = useMemo(
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
@@ -224,7 +382,13 @@ export function MonitoringSettingsSection({
     const normalized = normalizeFormValues(values)
     const updates = (
       Object.keys(normalized) as Array<keyof NormalizedMonitoringValues>
-    ).filter((key) => normalized[key] !== baselineRef.current[key])
+    ).filter((key) => {
+      const value = normalized[key]
+      if (secretOptionKeys.has(key) && String(value).trim() === '') {
+        return false
+      }
+      return value !== baselineRef.current[key]
+    })
 
     if (updates.length === 0) {
       toast.info(t('No changes to save'))
@@ -239,7 +403,13 @@ export function MonitoringSettingsSection({
       })
     }
 
-    baselineRef.current = normalized
+    baselineRef.current = {
+      ...normalized,
+      'monitor_setting.request_failure_webhook_secret': '',
+      'monitor_setting.channel_disabled_webhook_secret': '',
+    }
+    form.setValue('monitor_setting.request_failure_webhook_secret', '')
+    form.setValue('monitor_setting.channel_disabled_webhook_secret', '')
   }
 
   return (
@@ -406,6 +576,289 @@ export function MonitoringSettingsSection({
               )}
             />
           </div>
+
+          <FormField
+            control={form.control}
+            name='monitor_setting.channel_failure_rate_disable_enabled'
+            render={({ field }) => (
+              <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                <div className='space-y-0.5'>
+                  <FormLabel className='text-base'>
+                    {t('Failure rate auto-disable')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      'Disable channels when recent request failures exceed the configured rate'
+                    )}
+                  </FormDescription>
+                </div>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </FormItem>
+            )}
+          />
+
+          {failureRateAutoDisableEnabled && (
+            <div className='grid gap-6 md:grid-cols-3'>
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_failure_rate_window_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Failure rate window (minutes)')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        step={1}
+                        value={
+                          typeof field.value === 'number' &&
+                          Number.isFinite(field.value)
+                            ? field.value
+                            : ''
+                        }
+                        onChange={(event) =>
+                          field.onChange(event.target.valueAsNumber)
+                        }
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_failure_rate_threshold'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Request failure threshold (%)')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={
+                          typeof field.value === 'number' &&
+                          Number.isFinite(field.value)
+                            ? field.value
+                            : ''
+                        }
+                        onChange={(event) =>
+                          field.onChange(event.target.valueAsNumber)
+                        }
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_failure_rate_min_requests'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Minimum requests')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        step={1}
+                        value={
+                          typeof field.value === 'number' &&
+                          Number.isFinite(field.value)
+                            ? field.value
+                            : ''
+                        }
+                        onChange={(event) =>
+                          field.onChange(event.target.valueAsNumber)
+                        }
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Minimum request count before failure-rate rules can disable a channel'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          )}
+
+          <div className='grid gap-6 md:grid-cols-2'>
+            <FormField
+              control={form.control}
+              name='monitor_setting.request_failure_webhook_enabled'
+              render={({ field }) => (
+                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                  <div className='space-y-0.5'>
+                    <FormLabel className='text-base'>
+                      {t('Request failure Webhook')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Send a webhook notification whenever an upstream request fails'
+                      )}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='monitor_setting.channel_disabled_webhook_enabled'
+              render={({ field }) => (
+                <FormItem className='flex flex-row items-center justify-between rounded-lg border p-4'>
+                  <div className='space-y-0.5'>
+                    <FormLabel className='text-base'>
+                      {t('Channel disabled Webhook')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Send a webhook notification when a channel is automatically disabled'
+                      )}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+
+          {requestFailureWebhookEnabled && (
+            <div className='grid gap-6 md:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='monitor_setting.request_failure_webhook_url'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Request failure Webhook URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('https://example.com/webhook')}
+                        value={field.value}
+                        onChange={(event) => field.onChange(event.target.value)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Webhook URL must start with https://')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.request_failure_webhook_secret'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Request failure Webhook secret')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='password'
+                        placeholder={t(
+                          'Webhook signing secret (leave blank unless updating)'
+                        )}
+                        value={field.value}
+                        onChange={(event) => field.onChange(event.target.value)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          )}
+
+          {channelDisabledWebhookEnabled && (
+            <div className='grid gap-6 md:grid-cols-2'>
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_disabled_webhook_url'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Channel disabled Webhook URL')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        placeholder={t('https://example.com/webhook')}
+                        value={field.value}
+                        onChange={(event) => field.onChange(event.target.value)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t('Webhook URL must start with https://')}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_disabled_webhook_secret'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Channel disabled Webhook secret')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='password'
+                        placeholder={t(
+                          'Webhook signing secret (leave blank unless updating)'
+                        )}
+                        value={field.value}
+                        onChange={(event) => field.onChange(event.target.value)}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+          )}
 
           <FormField
             control={form.control}

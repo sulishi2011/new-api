@@ -2,7 +2,6 @@ package aws
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,18 +39,22 @@ func getAwsErrorStatusCode(err error) int {
 	return http.StatusInternalServerError
 }
 
-func newAwsInvokeContext(info *relaycommon.RelayInfo) (context.Context, context.CancelFunc) {
+func newAwsInvokeContext(c *gin.Context, info *relaycommon.RelayInfo) (context.Context, context.CancelFunc) {
+	parent := context.Background()
+	if c != nil && c.Request != nil {
+		parent = c.Request.Context()
+	}
 	if info == nil {
 		if common.RelayTimeout <= 0 {
-			return context.Background(), func() {}
+			return context.WithCancel(parent)
 		}
-		return context.WithTimeout(context.Background(), time.Duration(common.RelayTimeout)*time.Second)
+		return context.WithTimeout(parent, time.Duration(common.RelayTimeout)*time.Second)
 	}
 	requestTimeout := service.ResolveRelayHTTPClientPolicy(info.ChannelSetting, info.IsStream).RequestTimeout
 	if requestTimeout <= 0 {
-		return context.Background(), func() {}
+		return context.WithCancel(parent)
 	}
-	return context.WithTimeout(context.Background(), requestTimeout)
+	return context.WithTimeout(parent, requestTimeout)
 }
 
 func newAwsClient(c *gin.Context, info *relaycommon.RelayInfo) (*bedrockruntime.Client, error) {
@@ -227,7 +230,7 @@ func getAwsModelID(requestModel string) string {
 
 func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
-	ctx, cancel := newAwsInvokeContext(info)
+	ctx, cancel := newAwsInvokeContext(c, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
@@ -257,7 +260,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 }
 
 func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
-	ctx, cancel := newAwsInvokeContext(info)
+	ctx, cancel := newAwsInvokeContext(c, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
@@ -267,6 +270,42 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	}
 	stream := awsResp.GetStream()
 	defer stream.Close()
+	events := stream.Events()
+
+	if info.StreamStatus == nil {
+		info.StreamStatus = relaycommon.NewStreamStatus()
+	}
+
+	streamingTimeout := helper.ResolveStreamIdleTimeout(info)
+	var (
+		idleTimer *time.Timer
+		idleChan  <-chan time.Time
+	)
+	if streamingTimeout > 0 {
+		idleTimer = time.NewTimer(streamingTimeout)
+		idleChan = idleTimer.C
+		defer idleTimer.Stop()
+	}
+
+	resetIdleTimer := func() {
+		if idleTimer == nil {
+			return
+		}
+		if !idleTimer.Stop() {
+			select {
+			case <-idleTimer.C:
+			default:
+			}
+		}
+		idleTimer.Reset(streamingTimeout)
+	}
+
+	closeStream := func() {
+		cancel()
+		if err := stream.Close(); err != nil {
+			common.SysLog(fmt.Sprintf("failed to close aws stream: %v", err))
+		}
+	}
 
 	claudeInfo := &claude.ClaudeResponseInfo{
 		ResponseId:   helper.GetResponseID(c),
@@ -276,31 +315,50 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 		Usage:        &dto.Usage{},
 	}
 
-	for event := range stream.Events() {
-		switch v := event.(type) {
-		case *bedrockruntimeTypes.ResponseStreamMemberChunk:
-			info.SetFirstResponseTime()
-			respErr := claude.HandleStreamResponseData(c, info, claudeInfo, string(v.Value.Bytes))
-			if respErr != nil {
-				return respErr, nil
+	for {
+		select {
+		case <-idleChan:
+			err := fmt.Errorf("aws stream idle timeout after %s", streamingTimeout)
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonTimeout, err)
+			closeStream()
+			return types.NewError(err, types.ErrorCodeChannelResponseTimeExceeded), nil
+		case <-c.Request.Context().Done():
+			err := c.Request.Context().Err()
+			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
+			closeStream()
+			return types.NewError(err, types.ErrorCodeChannelResponseTimeExceeded), nil
+		case event, ok := <-events:
+			if !ok {
+				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
+				claude.HandleStreamFinalResponse(c, info, claudeInfo)
+				return nil, claudeInfo.Usage
 			}
-		case *bedrockruntimeTypes.UnknownUnionMember:
-			fmt.Println("unknown tag:", v.Tag)
-			return types.NewError(errors.New("unknown response type"), types.ErrorCodeInvalidRequest), nil
-		default:
-			fmt.Println("union is nil or unknown type")
-			return types.NewError(errors.New("nil or unknown response type"), types.ErrorCodeInvalidRequest), nil
+			resetIdleTimer()
+
+			switch v := event.(type) {
+			case *bedrockruntimeTypes.ResponseStreamMemberChunk:
+				info.SetFirstResponseTime()
+				info.ReceivedResponseCount++
+				info.AppendTraceResponseChunkParts("data: ", string(v.Value.Bytes), "\n\n")
+				respErr := claude.HandleStreamResponseData(c, info, claudeInfo, string(v.Value.Bytes))
+				if respErr != nil {
+					return respErr, nil
+				}
+			case *bedrockruntimeTypes.UnknownUnionMember:
+				fmt.Println("unknown tag:", v.Tag)
+				return types.NewError(errors.New("unknown response type"), types.ErrorCodeInvalidRequest), nil
+			default:
+				fmt.Println("union is nil or unknown type")
+				return types.NewError(errors.New("nil or unknown response type"), types.ErrorCodeInvalidRequest), nil
+			}
 		}
 	}
-
-	claude.HandleStreamFinalResponse(c, info, claudeInfo)
-	return nil, claudeInfo.Usage
 }
 
 // Nova模型处理函数
 func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
-	ctx, cancel := newAwsInvokeContext(info)
+	ctx, cancel := newAwsInvokeContext(c, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
@@ -325,7 +383,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 		} `json:"usage"`
 	}
 
-	if err := json.Unmarshal(awsResp.Body, &novaResp); err != nil {
+	if err := common.Unmarshal(awsResp.Body, &novaResp); err != nil {
 		return types.NewError(errors.Wrap(err, "unmarshal nova response"), types.ErrorCodeBadResponseBody), nil
 	}
 

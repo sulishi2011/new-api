@@ -178,6 +178,12 @@ func InitEnv() {
 		SysError("TRACE_UPLOAD_BATCH_MAX_BYTES must be at least 1024, using default value: 8388608")
 		TraceUploadBatchMaxBytes = 8 << 20
 	}
+	TraceFullBodyEnabled = GetEnvOrDefaultBool("TRACE_FULL_BODY_ENABLED", TraceFullBodyEnabled)
+	TraceFullBodyMaxBytes = int64(GetEnvOrDefault("TRACE_FULL_BODY_MAX_BYTES", int(TraceFullBodyMaxBytes)))
+	if TraceFullBodyMaxBytes < 0 {
+		SysError("TRACE_FULL_BODY_MAX_BYTES must be non-negative, using default value: 20971520")
+		TraceFullBodyMaxBytes = 20 << 20
+	}
 	TraceS3Bucket = GetEnvOrDefaultString("TRACE_S3_BUCKET", TraceS3Bucket)
 	TraceS3Region = GetEnvOrDefaultString("TRACE_S3_REGION", TraceS3Region)
 	TraceS3Endpoint = GetEnvOrDefaultString("TRACE_S3_ENDPOINT", TraceS3Endpoint)

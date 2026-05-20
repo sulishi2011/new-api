@@ -13,8 +13,9 @@ import (
 type DiskCacheType string
 
 const (
-	DiskCacheTypeBody DiskCacheType = "body" // 请求体缓存
-	DiskCacheTypeFile DiskCacheType = "file" // 文件数据缓存
+	DiskCacheTypeBody  DiskCacheType = "body"  // 请求体缓存
+	DiskCacheTypeFile  DiskCacheType = "file"  // 文件数据缓存
+	DiskCacheTypeTrace DiskCacheType = "trace" // Trace 正文缓存
 )
 
 // 统一的缓存目录名

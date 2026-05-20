@@ -287,6 +287,16 @@ export type OperationsSettings = {
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
+  'monitor_setting.channel_failure_rate_disable_enabled': boolean
+  'monitor_setting.channel_failure_rate_window_minutes': number
+  'monitor_setting.channel_failure_rate_threshold': number
+  'monitor_setting.channel_failure_rate_min_requests': number
+  'monitor_setting.request_failure_webhook_enabled': boolean
+  'monitor_setting.request_failure_webhook_url': string
+  'monitor_setting.request_failure_webhook_secret': string
+  'monitor_setting.channel_disabled_webhook_enabled': boolean
+  'monitor_setting.channel_disabled_webhook_url': string
+  'monitor_setting.channel_disabled_webhook_secret': string
   SMTPServer: string
   SMTPPort: string
   SMTPAccount: string

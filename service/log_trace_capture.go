@@ -19,6 +19,7 @@ func CaptureTraceRequestFromBytes(info *relaycommon.RelayInfo, contentType strin
 		truncated = true
 	}
 	info.SetTraceRequestBodyPreview(contentType, preview, int64(len(body)), truncated)
+	info.SetTraceRequestFullBodyFromBytes(contentType, body)
 }
 
 func CaptureTraceRequestFromStorage(info *relaycommon.RelayInfo, contentType string, storage common.BodyStorage) {
@@ -39,6 +40,7 @@ func CaptureTraceRequestFromStorage(info *relaycommon.RelayInfo, contentType str
 		n = relaycommon.LogTraceInlineLimit
 	}
 	info.SetTraceRequestBodyPreview(contentType, buf[:n], storage.Size(), truncated)
+	info.SetTraceRequestFullBodyFromReader(contentType, storage)
 	_, _ = storage.Seek(0, io.SeekStart)
 }
 
@@ -58,6 +60,7 @@ func CaptureTraceResponseFromBytes(info *relaycommon.RelayInfo, resp *http.Respo
 		truncated = true
 	}
 	info.SetTraceResponseBodyPreview(contentType, preview, int64(len(body)), truncated)
+	info.SetTraceResponseFullBodyFromBytes(contentType, body)
 }
 
 func EnsureTraceResponseBodyFromBytes(info *relaycommon.RelayInfo, contentType string, body []byte) {
@@ -77,4 +80,5 @@ func EnsureTraceResponseBodyFromBytes(info *relaycommon.RelayInfo, contentType s
 		truncated = true
 	}
 	info.SetTraceResponseBodyPreview(contentType, preview, int64(len(body)), truncated)
+	info.SetTraceResponseFullBodyFromBytes(contentType, body)
 }

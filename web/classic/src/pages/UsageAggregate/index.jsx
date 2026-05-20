@@ -113,9 +113,13 @@ const pickerDateToUtcTimestamp = (value) => {
 
 const formatBucket = (timestamp, granularity) => {
   if (!timestamp) return '-';
-  const format =
-    granularity === 'hour' ? 'YYYY-MM-DD HH:00 [UTC]' : 'YYYY-MM-DD [UTC]';
-  return dayjs.unix(timestamp).utc().format(format);
+  const start = dayjs.unix(timestamp).utc();
+  if (!start.isValid()) return '-';
+  const end = start.add(1, granularity === 'hour' ? 'hour' : 'day');
+  const endText = start.isSame(end, 'day')
+    ? end.format('HH:mm')
+    : end.format('YYYY-MM-DD HH:mm');
+  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} UTC`;
 };
 
 const parseNumericFilter = (value) => {
@@ -397,7 +401,7 @@ const UsageAggregate = () => {
       title: sortableTitle(t('时间'), 'bucket_start'),
       dataIndex: 'bucket_start',
       key: 'bucket_start',
-      width: 170,
+      width: 260,
       fixed: 'left',
       render: (value) => formatBucket(value, appliedFilters.granularity),
     },

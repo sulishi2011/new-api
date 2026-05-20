@@ -166,10 +166,14 @@ func usageAggregateTable(granularity string) string {
 }
 
 func usageAggregateBucketExpression(granularity string, column string) string {
+	bucketSeconds := usageAggregateDaySeconds
 	if normalizeUsageAggregateGranularity(granularity) == UsageAggregateGranularityHour {
-		return "((" + column + " / 3600) * 3600)"
+		bucketSeconds = usageAggregateHourSeconds
 	}
-	return "((" + column + " / 86400) * 86400)"
+	if common.UsingMySQL {
+		return fmt.Sprintf("(FLOOR(%s / %d) * %d)", column, bucketSeconds, bucketSeconds)
+	}
+	return fmt.Sprintf("((%s / %d) * %d)", column, bucketSeconds, bucketSeconds)
 }
 
 func aggregateSelectFields(bucketExpr string) string {
@@ -298,7 +302,7 @@ func RollupUsageAggregateHourly(bucketStart int64) error {
 	bucketEnd := bucketStart + usageAggregateHourSeconds
 
 	var rows []UsageAggregateRow
-	err := DB.Model(&UsageLedger{}).
+	err := readDB().Model(&UsageLedger{}).
 		Select(aggregateSelectFields(usageAggregateBucketParamExpression()), bucketStart).
 		Where("timestamp >= ? AND timestamp < ?", bucketStart, bucketEnd).
 		Group(usageAggregateGroupFields()).

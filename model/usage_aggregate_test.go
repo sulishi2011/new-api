@@ -96,6 +96,63 @@ func TestUsageAggregateBucketParamExpressionByDatabase(t *testing.T) {
 	}
 }
 
+func TestUsageAggregateBucketExpressionByDatabase(t *testing.T) {
+	oldUsingSQLite := common.UsingSQLite
+	oldUsingMySQL := common.UsingMySQL
+	oldUsingPostgreSQL := common.UsingPostgreSQL
+	t.Cleanup(func() {
+		common.UsingSQLite = oldUsingSQLite
+		common.UsingMySQL = oldUsingMySQL
+		common.UsingPostgreSQL = oldUsingPostgreSQL
+	})
+
+	tests := []struct {
+		name            string
+		usingSQLite     bool
+		usingMySQL      bool
+		usingPostgreSQL bool
+		granularity     string
+		want            string
+	}{
+		{
+			name:            "postgresql hour",
+			usingPostgreSQL: true,
+			granularity:     UsageAggregateGranularityHour,
+			want:            "((timestamp / 3600) * 3600)",
+		},
+		{
+			name:        "sqlite day",
+			usingSQLite: true,
+			granularity: UsageAggregateGranularityDay,
+			want:        "((timestamp / 86400) * 86400)",
+		},
+		{
+			name:        "mysql hour",
+			usingMySQL:  true,
+			granularity: UsageAggregateGranularityHour,
+			want:        "(FLOOR(timestamp / 3600) * 3600)",
+		},
+		{
+			name:        "mysql day",
+			usingMySQL:  true,
+			granularity: UsageAggregateGranularityDay,
+			want:        "(FLOOR(timestamp / 86400) * 86400)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			common.UsingSQLite = tt.usingSQLite
+			common.UsingMySQL = tt.usingMySQL
+			common.UsingPostgreSQL = tt.usingPostgreSQL
+
+			if got := usageAggregateBucketExpression(tt.granularity, "timestamp"); got != tt.want {
+				t.Fatalf("unexpected bucket expression: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQueryUsageAggregatesLiveUsesLedgerBeforeRollup(t *testing.T) {
 	db := setupUsageAggregateTestDB(t)
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"os"
 	"path"
 	"strings"
 	"sync"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/pkg/tracestore"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"gorm.io/gorm"
@@ -89,9 +91,10 @@ type logTraceBatchItem struct {
 }
 
 type preparedLogTraceBatchItem struct {
-	Archive logTraceArchive
-	Record  LogTrace
-	RawSize int64
+	Archive       logTraceArchive
+	Record        LogTrace
+	RawSize       int64
+	FullBodyFiles []relaycommon.TraceFullBodyFile
 }
 
 var (
@@ -109,11 +112,13 @@ func prepareLogTrace(logType int, other map[string]interface{}) interface{} {
 		return nil
 	}
 	if !common.TraceStorageEnabled || !tracestore.IsConfigured() {
+		cleanupLogTraceFullBodyFiles(trace)
 		return nil
 	}
 
 	delete(other, "trace")
 	if !shouldCaptureLogTrace(logType) {
+		cleanupLogTraceFullBodyFiles(trace)
 		return nil
 	}
 	other["trace_ref"] = map[string]interface{}{
@@ -182,6 +187,7 @@ func persistLogTrace(ctx context.Context, log *Log, trace interface{}) {
 func enqueueLogTraceBatch(log *Log, trace interface{}) {
 	queue := getLogTraceBatchQueue()
 	if queue == nil {
+		cleanupLogTraceFullBodyFiles(trace)
 		return
 	}
 	item := logTraceBatchItem{
@@ -195,6 +201,7 @@ func enqueueLogTraceBatch(log *Log, trace interface{}) {
 	select {
 	case queue <- item:
 	default:
+		cleanupLogTraceFullBodyFiles(trace)
 		dropped := logTraceBatchDropped.Add(1)
 		if dropped == 1 || dropped%1000 == 0 {
 			common.SysLog(fmt.Sprintf("trace batch queue full, dropped trace count=%d", dropped))
@@ -297,6 +304,10 @@ func persistLogTraceBatchSync(ctx context.Context, items []logTraceBatchItem) er
 
 func prepareLogTraceBatchItem(item logTraceBatchItem) (preparedLogTraceBatchItem, error) {
 	now := common.GetTimestamp()
+	fullBodyFiles, err := prepareLogTraceFullBodyFiles(item.Trace, item.LogId, item.CreatedAt, item.RequestId)
+	if err != nil {
+		return preparedLogTraceBatchItem{}, err
+	}
 	metadata := extractTraceMetadata(item.Trace)
 	upstreamRequestId := item.UpstreamRequestId
 	if upstreamRequestId == "" && metadata.UpstreamRequestId != "" {
@@ -314,6 +325,7 @@ func prepareLogTraceBatchItem(item logTraceBatchItem) (preparedLogTraceBatchItem
 	}
 	raw, err := common.Marshal(archive)
 	if err != nil {
+		cleanupTraceFullBodyFiles(fullBodyFiles)
 		return preparedLogTraceBatchItem{}, err
 	}
 	record := LogTrace{
@@ -335,9 +347,10 @@ func prepareLogTraceBatchItem(item logTraceBatchItem) (preparedLogTraceBatchItem
 		record.Backend = "s3"
 	}
 	return preparedLogTraceBatchItem{
-		Archive: archive,
-		Record:  record,
-		RawSize: int64(len(raw)),
+		Archive:       archive,
+		Record:        record,
+		RawSize:       int64(len(raw)),
+		FullBodyFiles: fullBodyFiles,
 	}, nil
 }
 
@@ -368,14 +381,36 @@ func persistPreparedLogTraceBatch(ctx context.Context, items []preparedLogTraceB
 		Traces:   archives,
 	})
 	if err != nil {
+		for _, item := range items {
+			cleanupTraceFullBodyFiles(item.FullBodyFiles)
+		}
 		return err
 	}
 	compressed, err := gzipBytes(raw)
 	if err != nil {
+		for _, item := range items {
+			cleanupTraceFullBodyFiles(item.FullBodyFiles)
+		}
 		return err
 	}
 	if err := LOG_DB.Create(&records).Error; err != nil {
+		for _, item := range items {
+			cleanupTraceFullBodyFiles(item.FullBodyFiles)
+		}
 		return err
+	}
+	for _, item := range items {
+		if err := uploadLogTraceFullBodyFiles(ctx, item.FullBodyFiles); err != nil {
+			updateErr := LOG_DB.Model(&LogTrace{}).Where("log_id IN ?", logIds).Updates(map[string]interface{}{
+				"status":        LogTraceStatusUploadFailed,
+				"updated_at":    common.GetTimestamp(),
+				"error_message": truncateLogTraceError(err.Error()),
+			}).Error
+			if updateErr != nil {
+				return fmt.Errorf("%w; failed to update trace batch status: %v", err, updateErr)
+			}
+			return err
+		}
 	}
 	if err := tracestore.Put(ctx, objectKey, compressed); err != nil {
 		updateErr := LOG_DB.Model(&LogTrace{}).Where("log_id IN ?", logIds).Updates(map[string]interface{}{
@@ -397,6 +432,11 @@ func persistPreparedLogTraceBatch(ctx context.Context, items []preparedLogTraceB
 
 func persistLogTraceSync(ctx context.Context, log *Log, trace interface{}) error {
 	now := common.GetTimestamp()
+	fullBodyFiles, err := prepareLogTraceFullBodyFiles(trace, log.Id, log.CreatedAt, log.RequestId)
+	if err != nil {
+		cleanupLogTraceFullBodyFiles(trace)
+		return err
+	}
 	metadata := extractTraceMetadata(trace)
 	if log.UpstreamRequestId == "" && metadata.UpstreamRequestId != "" {
 		log.UpstreamRequestId = metadata.UpstreamRequestId
@@ -413,10 +453,12 @@ func persistLogTraceSync(ctx context.Context, log *Log, trace interface{}) error
 	}
 	raw, err := common.Marshal(archive)
 	if err != nil {
+		cleanupTraceFullBodyFiles(fullBodyFiles)
 		return err
 	}
 	compressed, err := gzipBytes(raw)
 	if err != nil {
+		cleanupTraceFullBodyFiles(fullBodyFiles)
 		return err
 	}
 
@@ -440,6 +482,19 @@ func persistLogTraceSync(ctx context.Context, log *Log, trace interface{}) error
 		record.Backend = "s3"
 	}
 	if err := LOG_DB.Create(record).Error; err != nil {
+		cleanupLogTraceFullBodyFiles(trace)
+		return err
+	}
+
+	if err := uploadLogTraceFullBodyFiles(ctx, fullBodyFiles); err != nil {
+		updateErr := LOG_DB.Model(&LogTrace{}).Where("id = ?", record.Id).Updates(map[string]interface{}{
+			"status":        LogTraceStatusUploadFailed,
+			"updated_at":    common.GetTimestamp(),
+			"error_message": truncateLogTraceError(err.Error()),
+		}).Error
+		if updateErr != nil {
+			return fmt.Errorf("%w; failed to update trace status: %v", err, updateErr)
+		}
 		return err
 	}
 
@@ -506,6 +561,70 @@ func buildLogTraceBatchObjectKey(t time.Time) string {
 		return key
 	}
 	return path.Join(prefix, key)
+}
+
+func buildLogTraceBodyObjectKey(logId int, createdAt int64, requestId string, kind string) string {
+	t := time.Unix(createdAt, 0).UTC()
+	name := fmt.Sprintf("%d", logId)
+	if part := sanitizeTraceKeyPart(requestId); part != "" {
+		name += "-" + part
+	}
+	name += "-" + sanitizeTraceKeyPart(kind) + ".body"
+	key := fmt.Sprintf("%04d/%02d/%02d/body/%s", t.Year(), t.Month(), t.Day(), name)
+	prefix := strings.Trim(common.TraceS3Prefix, "/")
+	if prefix == "" {
+		return key
+	}
+	return path.Join(prefix, key)
+}
+
+func prepareLogTraceFullBodyFiles(trace interface{}, logId int, createdAt int64, requestId string) ([]relaycommon.TraceFullBodyFile, error) {
+	payload, ok := trace.(*relaycommon.TracePayload)
+	if !ok || payload == nil {
+		return nil, nil
+	}
+	requestKey := buildLogTraceBodyObjectKey(logId, createdAt, requestId, "request")
+	responseKey := buildLogTraceBodyObjectKey(logId, createdAt, requestId, "response")
+	return payload.PrepareFullBodyFiles(requestKey, responseKey)
+}
+
+func cleanupLogTraceFullBodyFiles(trace interface{}) {
+	payload, ok := trace.(*relaycommon.TracePayload)
+	if !ok || payload == nil {
+		return
+	}
+	payload.CleanupFullBodyFiles()
+}
+
+func uploadLogTraceFullBodyFiles(ctx context.Context, files []relaycommon.TraceFullBodyFile) error {
+	for _, file := range files {
+		if file.Path == "" || file.ObjectKey == "" {
+			continue
+		}
+		if err := uploadLogTraceFullBodyFile(ctx, file); err != nil {
+			cleanupTraceFullBodyFiles(files)
+			return err
+		}
+		_ = os.Remove(file.Path)
+	}
+	return nil
+}
+
+func uploadLogTraceFullBodyFile(ctx context.Context, file relaycommon.TraceFullBodyFile) error {
+	reader, err := os.Open(file.Path)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+	return tracestore.PutObject(ctx, file.ObjectKey, reader, file.ContentType, "")
+}
+
+func cleanupTraceFullBodyFiles(files []relaycommon.TraceFullBodyFile) {
+	for _, file := range files {
+		if file.Path != "" {
+			_ = os.Remove(file.Path)
+		}
+	}
 }
 
 func sanitizeTraceKeyPart(value string) string {
@@ -606,7 +725,12 @@ func GetLogTracePayload(ctx context.Context, logId int) (map[string]interface{},
 		if err != nil {
 			return nil, err
 		}
-		return decodeStoredLogTracePayload(raw, logId)
+		payload, err := decodeStoredLogTracePayload(raw, logId)
+		if err != nil {
+			return nil, err
+		}
+		hydrateStoredLogTraceFullBodies(ctx, payload)
+		return payload, nil
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, err
@@ -657,6 +781,41 @@ func decodeStoredLogTracePayload(raw []byte, logId int) (map[string]interface{},
 		return nil, ErrLogTraceNotFound
 	}
 	return payload, nil
+}
+
+func hydrateStoredLogTraceFullBodies(ctx context.Context, payload map[string]interface{}) {
+	if payload == nil {
+		return
+	}
+	tracePayload, ok := payload["trace"].(map[string]interface{})
+	if !ok || tracePayload == nil {
+		return
+	}
+	for _, key := range []string{"request", "response"} {
+		part, ok := tracePayload[key].(map[string]interface{})
+		if !ok || part == nil {
+			continue
+		}
+		hydrateTracePartFullBody(ctx, part)
+	}
+}
+
+func hydrateTracePartFullBody(ctx context.Context, part map[string]interface{}) {
+	objectKey, _ := part["body_object_key"].(string)
+	if objectKey == "" {
+		return
+	}
+	body, err := tracestore.Get(ctx, objectKey)
+	if err != nil {
+		part["body_object_error"] = err.Error()
+		return
+	}
+	part["body"] = string(body)
+	part["body_from_object"] = true
+	part["storage_kind"] = "s3_object"
+	if !boolFromInterface(part["full_body_truncated"]) {
+		part["truncated"] = false
+	}
 }
 
 func CleanupExpiredLogTraces(ctx context.Context, now int64, limit int) (int64, error) {

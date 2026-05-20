@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/bytedance/gopkg/util/gopool"
 )
 
 type UsageLedger struct {
@@ -108,6 +109,51 @@ func providerKeyPreviewFromOther(other map[string]interface{}) string {
 }
 
 func CreateUsageLedgerFromLog(log *Log, other map[string]interface{}) {
+	if log == nil || log.Type != LogTypeConsume || log.Id == 0 {
+		return
+	}
+	logCopy := *log
+	otherCopy := cloneUsageLedgerOther(other)
+	gopool.Go(func() {
+		createUsageLedgerFromLogSync(&logCopy, otherCopy)
+	})
+}
+
+func cloneUsageLedgerOther(other map[string]interface{}) map[string]interface{} {
+	if len(other) == 0 {
+		return nil
+	}
+	cloned := make(map[string]interface{}, len(other))
+	for key, value := range other {
+		cloned[key] = cloneUsageLedgerValue(value)
+	}
+	return cloned
+}
+
+func cloneUsageLedgerValue(value interface{}) interface{} {
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return cloneUsageLedgerOther(v)
+	case []interface{}:
+		cloned := make([]interface{}, len(v))
+		for i, item := range v {
+			cloned[i] = cloneUsageLedgerValue(item)
+		}
+		return cloned
+	case []int:
+		cloned := make([]int, len(v))
+		copy(cloned, v)
+		return cloned
+	case []string:
+		cloned := make([]string, len(v))
+		copy(cloned, v)
+		return cloned
+	default:
+		return value
+	}
+}
+
+func createUsageLedgerFromLogSync(log *Log, other map[string]interface{}) {
 	if log == nil || log.Type != LogTypeConsume || log.Id == 0 {
 		return
 	}

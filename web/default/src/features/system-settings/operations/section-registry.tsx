@@ -61,6 +61,26 @@ const OPERATIONS_SECTIONS = [
             settings['monitor_setting.auto_test_channel_enabled'],
           'monitor_setting.auto_test_channel_minutes':
             settings['monitor_setting.auto_test_channel_minutes'],
+          'monitor_setting.channel_failure_rate_disable_enabled':
+            settings['monitor_setting.channel_failure_rate_disable_enabled'],
+          'monitor_setting.channel_failure_rate_window_minutes':
+            settings['monitor_setting.channel_failure_rate_window_minutes'],
+          'monitor_setting.channel_failure_rate_threshold':
+            settings['monitor_setting.channel_failure_rate_threshold'],
+          'monitor_setting.channel_failure_rate_min_requests':
+            settings['monitor_setting.channel_failure_rate_min_requests'],
+          'monitor_setting.request_failure_webhook_enabled':
+            settings['monitor_setting.request_failure_webhook_enabled'],
+          'monitor_setting.request_failure_webhook_url':
+            settings['monitor_setting.request_failure_webhook_url'],
+          'monitor_setting.request_failure_webhook_secret':
+            settings['monitor_setting.request_failure_webhook_secret'],
+          'monitor_setting.channel_disabled_webhook_enabled':
+            settings['monitor_setting.channel_disabled_webhook_enabled'],
+          'monitor_setting.channel_disabled_webhook_url':
+            settings['monitor_setting.channel_disabled_webhook_url'],
+          'monitor_setting.channel_disabled_webhook_secret':
+            settings['monitor_setting.channel_disabled_webhook_secret'],
         }}
       />
     ),

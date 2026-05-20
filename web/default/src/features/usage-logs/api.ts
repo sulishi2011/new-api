@@ -21,6 +21,7 @@ import { buildQueryParams } from './lib/utils'
 import type {
   GetLogsParams,
   GetLogsResponse,
+  GetLogTraceResponse,
   GetLogStatsParams,
   GetLogStatsResponse,
   GetMidjourneyLogsParams,
@@ -87,6 +88,11 @@ export async function getUserInfo(
   userId: number
 ): Promise<{ success: boolean; message?: string; data?: UserInfo }> {
   const res = await api.get(`/api/user/${userId}`)
+  return res.data
+}
+
+export async function getLogTrace(logId: number): Promise<GetLogTraceResponse> {
+  const res = await api.get(`/api/log/${logId}/trace`)
   return res.data
 }
 

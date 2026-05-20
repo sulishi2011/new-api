@@ -22,6 +22,7 @@ var ErrNotConfigured = errors.New("trace store is not configured")
 
 type Store interface {
 	Put(ctx context.Context, key string, body []byte) error
+	PutObject(ctx context.Context, key string, body io.Reader, contentType string, contentEncoding string) error
 	Get(ctx context.Context, key string) ([]byte, error)
 }
 
@@ -70,6 +71,17 @@ func Put(ctx context.Context, key string, body []byte) error {
 		return ErrNotConfigured
 	}
 	return store.Put(ctx, key, body)
+}
+
+func PutObject(ctx context.Context, key string, body io.Reader, contentType string, contentEncoding string) error {
+	mu.RLock()
+	store := activeStore
+	ok := configured
+	mu.RUnlock()
+	if !ok || store == nil {
+		return ErrNotConfigured
+	}
+	return store.PutObject(ctx, key, body, contentType, contentEncoding)
 }
 
 func Get(ctx context.Context, key string) ([]byte, error) {
@@ -131,12 +143,21 @@ func newS3Store(ctx context.Context) (*s3Store, error) {
 }
 
 func (s *s3Store) Put(ctx context.Context, key string, body []byte) error {
+	return s.PutObject(ctx, key, bytes.NewReader(body), "application/json", "gzip")
+}
+
+func (s *s3Store) PutObject(ctx context.Context, key string, body io.Reader, contentType string, contentEncoding string) error {
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
 	input := &s3.PutObjectInput{
-		Bucket:          aws.String(s.bucket),
-		Key:             aws.String(key),
-		Body:            bytes.NewReader(body),
-		ContentType:     aws.String("application/json"),
-		ContentEncoding: aws.String("gzip"),
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		Body:        body,
+		ContentType: aws.String(contentType),
+	}
+	if contentEncoding != "" {
+		input.ContentEncoding = aws.String(contentEncoding)
 	}
 	if s.sse != "" {
 		input.ServerSideEncryption = s3types.ServerSideEncryption(s.sse)
