@@ -194,9 +194,19 @@ func aggregateSelectFields(bucketExpr string) string {
 	}, ", ")
 }
 
+func usageAggregateBucketParamExpression() string {
+	if common.UsingPostgreSQL {
+		return "CAST(? AS BIGINT)"
+	}
+	if common.UsingMySQL {
+		return "CAST(? AS SIGNED)"
+	}
+	return "CAST(? AS INTEGER)"
+}
+
 func hourlyToDailySelectFields() string {
 	return strings.Join([]string{
-		"? AS bucket_start",
+		usageAggregateBucketParamExpression() + " AS bucket_start",
 		"channel_id",
 		"COALESCE(MAX(channel_name), '') AS channel_name",
 		"provider_key_id",
@@ -289,7 +299,7 @@ func RollupUsageAggregateHourly(bucketStart int64) error {
 
 	var rows []UsageAggregateRow
 	err := DB.Model(&UsageLedger{}).
-		Select(aggregateSelectFields("?"), bucketStart).
+		Select(aggregateSelectFields(usageAggregateBucketParamExpression()), bucketStart).
 		Where("timestamp >= ? AND timestamp < ?", bucketStart, bucketEnd).
 		Group(usageAggregateGroupFields()).
 		Scan(&rows).Error

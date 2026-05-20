@@ -49,6 +49,53 @@ func setupUsageAggregateTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestUsageAggregateBucketParamExpressionByDatabase(t *testing.T) {
+	oldUsingSQLite := common.UsingSQLite
+	oldUsingMySQL := common.UsingMySQL
+	oldUsingPostgreSQL := common.UsingPostgreSQL
+	t.Cleanup(func() {
+		common.UsingSQLite = oldUsingSQLite
+		common.UsingMySQL = oldUsingMySQL
+		common.UsingPostgreSQL = oldUsingPostgreSQL
+	})
+
+	tests := []struct {
+		name            string
+		usingSQLite     bool
+		usingMySQL      bool
+		usingPostgreSQL bool
+		want            string
+	}{
+		{
+			name:            "postgresql",
+			usingPostgreSQL: true,
+			want:            "CAST(? AS BIGINT)",
+		},
+		{
+			name:       "mysql",
+			usingMySQL: true,
+			want:       "CAST(? AS SIGNED)",
+		},
+		{
+			name:        "sqlite",
+			usingSQLite: true,
+			want:        "CAST(? AS INTEGER)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			common.UsingSQLite = tt.usingSQLite
+			common.UsingMySQL = tt.usingMySQL
+			common.UsingPostgreSQL = tt.usingPostgreSQL
+
+			if got := usageAggregateBucketParamExpression(); got != tt.want {
+				t.Fatalf("unexpected bucket param expression: got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestQueryUsageAggregatesLiveUsesLedgerBeforeRollup(t *testing.T) {
 	db := setupUsageAggregateTestDB(t)
 

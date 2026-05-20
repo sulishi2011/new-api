@@ -18,10 +18,11 @@ services:
     volumes:
       - ./data:/data
     environment:
-      SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@ai-new-api.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
-      LOG_SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@ai-new-api.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
-      SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@ai-new-api-slave1.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
-      LOG_SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@ai-new-api-slave1.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
+      NODE_TYPE: "${NODE_TYPE:-master}"
+      SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
+      LOG_SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
+      SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
+      LOG_SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
       REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
       SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
       CRYPTO_SECRET: ${CRYPTO_SECRET:?set CRYPTO_SECRET}
