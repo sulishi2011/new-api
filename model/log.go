@@ -56,20 +56,20 @@ func getRequestAttribution(c *gin.Context) requestAttribution {
 }
 
 type Log struct {
-	Id                int    `json:"id" gorm:"index:idx_created_at_id,priority:1;index:idx_user_id_id,priority:2;index:idx_logs_type_created_id,priority:3;index:idx_logs_channel_type_created_id,priority:4"`
-	UserId            int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:2;index:idx_created_at_type;index:idx_logs_type_created_id,priority:2;index:idx_logs_channel_type_created_id,priority:3;index:idx_logs_vendor_profile_created,priority:2;index:idx_logs_biz_line_scene_created,priority:3"`
-	Type              int    `json:"type" gorm:"index:idx_created_at_type;index:idx_logs_type_created_id,priority:1;index:idx_logs_channel_type_created_id,priority:2"`
+	Id                int64  `json:"id" gorm:"primaryKey;index:idx_created_at_id,priority:2;index:idx_logs_type_created_id,priority:3;index:idx_logs_channel_created_id,priority:3"`
+	UserId            int    `json:"user_id" gorm:"index"`
+	CreatedAt         int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_logs_type_created_id,priority:2;index:idx_logs_channel_created_id,priority:2;index:idx_logs_vendor_profile_created,priority:2;index:idx_logs_biz_line_scene_created,priority:3"`
+	Type              int    `json:"type" gorm:"index:idx_logs_type_created_id,priority:1"`
 	Content           string `json:"content"`
-	Username          string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
+	Username          string `json:"username" gorm:"index;default:''"`
 	TokenName         string `json:"token_name" gorm:"index;default:''"`
-	ModelName         string `json:"model_name" gorm:"index;index:index_username_model_name,priority:1;default:''"`
+	ModelName         string `json:"model_name" gorm:"index;default:''"`
 	Quota             int    `json:"quota" gorm:"default:0"`
 	PromptTokens      int    `json:"prompt_tokens" gorm:"default:0"`
 	CompletionTokens  int    `json:"completion_tokens" gorm:"default:0"`
 	UseTime           int    `json:"use_time" gorm:"default:0"`
 	IsStream          bool   `json:"is_stream"`
-	ChannelId         int    `json:"channel" gorm:"index;index:idx_logs_channel_type_created_id,priority:1"`
+	ChannelId         int    `json:"channel" gorm:"index;index:idx_logs_channel_created_id,priority:1"`
 	ChannelName       string `json:"channel_name" gorm:"->"`
 	TokenId           int    `json:"token_id" gorm:"default:0;index"`
 	Group             string `json:"group" gorm:"index"`
@@ -117,12 +117,13 @@ func formatUserLogs(logs []*Log, startIdx int) {
 		}
 		logs[i].Other = common.MapToJsonStr(otherMap)
 		logs[i].ProviderKeyId = 0
-		logs[i].Id = startIdx + i + 1
+		logs[i].Id = int64(startIdx + i + 1)
 	}
 }
 
 func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
-	err = logReadDB().Model(&Log{}).Where("token_id = ?", tokenId).Order("created_at desc, id desc").Limit(common.MaxRecentItems).Find(&logs).Error
+	tableName := currentLogReadTable()
+	err = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.token_id = ?", tokenId).Order("logs.created_at desc, logs.id desc").Limit(common.MaxRecentItems).Find(&logs).Error
 	formatUserLogs(logs, 0)
 	return logs, err
 }
@@ -139,7 +140,7 @@ func RecordLog(userId int, logType int, content string) {
 		Type:      logType,
 		Content:   content,
 	}
-	err := LOG_DB.Create(log).Error
+	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record log: " + err.Error())
 	}
@@ -164,7 +165,7 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo m
 		}
 		log.Other = common.MapToJsonStr(other)
 	}
-	if err := LOG_DB.Create(log).Error; err != nil {
+	if err := createLog(log); err != nil {
 		common.SysLog("failed to record log: " + err.Error())
 	}
 }
@@ -191,7 +192,7 @@ func RecordTopupLog(userId int, content string, callerIp string, paymentMethod s
 		Ip:        callerIp,
 		Other:     common.MapToJsonStr(other),
 	}
-	err := LOG_DB.Create(log).Error
+	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record topup log: " + err.Error())
 	}
@@ -252,7 +253,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		ProviderKeyId:     providerKeyId,
 		Other:             otherStr,
 	}
-	err := LOG_DB.Create(log).Error
+	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	} else {
@@ -490,7 +491,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		CostQuota:         costQuota,
 		Other:             otherStr,
 	}
-	err := LOG_DB.Create(log).Error
+	err := createLog(log)
 	if err != nil {
 		logger.LogError(c, "failed to record log: "+err.Error())
 	} else {
@@ -549,7 +550,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 		CostQuota: costQuota,
 		Other:     common.MapToJsonStr(params.Other),
 	}
-	err := LOG_DB.Create(log).Error
+	err := createLog(log)
 	if err != nil {
 		common.SysLog("failed to record task billing log: " + err.Error())
 	} else if params.LogType == LogTypeConsume {
@@ -575,11 +576,15 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 }
 
 func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
+	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	if err != nil {
+		return nil, 0, err
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
-		tx = logReadDB()
+		tx = logReadDB().Table(logReadTableExpr(tableName))
 	} else {
-		tx = logReadDB().Where("logs.type = ?", logType)
+		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.type = ?", logType)
 	}
 
 	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
@@ -624,7 +629,7 @@ func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Count(&total).Error
+	err = tx.Count(&total).Error
 	if err != nil {
 		return nil, 0, err
 	}
@@ -683,11 +688,15 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 }
 
 func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
+	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	if err != nil {
+		return nil, 0, err
+	}
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
-		tx = logReadDB().Where("logs.user_id = ?", userId)
+		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.user_id = ?", userId)
 	} else {
-		tx = logReadDB().Where("logs.user_id = ? and logs.type = ?", userId, logType)
+		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.user_id = ? and logs.type = ?", userId, logType)
 	}
 
 	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
@@ -728,7 +737,7 @@ func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTi
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
+	err = tx.Limit(logSearchCountLimit).Count(&total).Error
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
@@ -768,10 +777,14 @@ func applyLogContainsFilter(tx *gorm.DB, column string, value string) *gorm.DB {
 }
 
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, externalRequestId string, providerKeyId int, vendorProfileId int, bizLine string, bizScene string, userTier string, feature string) (stat Stat, err error) {
-	tx := logReadDB().Table("logs").Select("sum(quota) quota")
+	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	if err != nil {
+		return stat, err
+	}
+	tx := logReadDB().Table(logRawTableExpr(tableName)).Select("sum(quota) quota")
 
 	// 为rpm和tpm创建单独的查询
-	rpmTpmQuery := logReadDB().Table("logs").Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
+	rpmTpmQuery := logReadDB().Table(logRawTableExpr(tableName)).Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
 
 	tx = applyLogContainsFilter(tx, "username", username)
 	rpmTpmQuery = applyLogContainsFilter(rpmTpmQuery, "username", username)
@@ -842,7 +855,15 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 }
 
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
-	tx := logReadDB().Table("logs").Select("ifnull(sum(prompt_tokens),0) + ifnull(sum(completion_tokens),0)")
+	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	if err != nil {
+		return 0
+	}
+	sumExpr := "ifnull(sum(prompt_tokens),0) + ifnull(sum(completion_tokens),0)"
+	if logDatabaseType() == common.DatabaseTypePostgreSQL {
+		sumExpr = "COALESCE(sum(prompt_tokens),0) + COALESCE(sum(completion_tokens),0)"
+	}
+	tx := logReadDB().Table(logRawTableExpr(tableName)).Select(sumExpr)
 	if username != "" {
 		tx = tx.Where("username = ?", username)
 	}
@@ -863,54 +884,9 @@ func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelNa
 }
 
 func DeleteOldLog(ctx context.Context, targetTimestamp int64, limit int) (int64, error) {
-	var total int64 = 0
-	if limit <= 0 {
-		limit = 100
-	}
-
-	for {
-		if nil != ctx.Err() {
-			return total, ctx.Err()
-		}
-
-		rowsAffected, err := deleteLogBatch(ctx, targetTimestamp, LogTypeUnknown, limit)
-		if err != nil {
-			return total, err
-		}
-
-		total += rowsAffected
-
-		if rowsAffected < int64(limit) {
-			break
-		}
-	}
-
-	return total, nil
+	return 0, errors.New("日志已启用按月分表，按时间批量清理暂未启用")
 }
 
 func DeleteLogsByTypeBefore(ctx context.Context, logType int, targetTimestamp int64, limit int) (int64, error) {
-	return deleteLogBatch(ctx, targetTimestamp, logType, limit)
-}
-
-func deleteLogBatch(ctx context.Context, targetTimestamp int64, logType int, limit int) (int64, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	query := LOG_DB.WithContext(ctx).Model(&Log{}).Where("created_at < ?", targetTimestamp)
-	if logType != LogTypeUnknown {
-		query = query.Where("type = ?", logType)
-	}
-
-	var ids []int
-	if err := query.Order("created_at asc, id asc").Limit(limit).Pluck("id", &ids).Error; err != nil {
-		return 0, err
-	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	if err := LOG_DB.WithContext(ctx).Where("log_id IN ?", ids).Delete(&LogTrace{}).Error; err != nil {
-		return 0, err
-	}
-	result := LOG_DB.WithContext(ctx).Where("id IN ?", ids).Delete(&Log{})
-	return result.RowsAffected, result.Error
+	return 0, errors.New("日志已启用按月分表，按类型按时间清理暂未启用")
 }

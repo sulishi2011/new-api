@@ -35,7 +35,7 @@ var ErrLogTraceNotFound = errors.New("log trace not found")
 
 type LogTrace struct {
 	Id                int    `json:"id"`
-	LogId             int    `json:"log_id" gorm:"uniqueIndex;not null"`
+	LogId             int64  `json:"log_id" gorm:"uniqueIndex;not null"`
 	CreatedAt         int64  `json:"created_at" gorm:"bigint;index"`
 	UpdatedAt         int64  `json:"updated_at" gorm:"bigint"`
 	ExpiresAt         int64  `json:"expires_at" gorm:"bigint;index:idx_log_traces_status_expires,priority:2"`
@@ -55,7 +55,7 @@ type LogTrace struct {
 
 type logTraceArchive struct {
 	Version           int         `json:"version"`
-	LogId             int         `json:"log_id"`
+	LogId             int64       `json:"log_id"`
 	RequestId         string      `json:"request_id,omitempty"`
 	ExternalRequestId string      `json:"external_request_id,omitempty"`
 	UpstreamRequestId string      `json:"upstream_request_id,omitempty"`
@@ -82,7 +82,7 @@ type traceMetadata struct {
 }
 
 type logTraceBatchItem struct {
-	LogId             int
+	LogId             int64
 	RequestId         string
 	ExternalRequestId string
 	UpstreamRequestId string
@@ -362,7 +362,7 @@ func persistPreparedLogTraceBatch(ctx context.Context, items []preparedLogTraceB
 	objectKey := buildLogTraceBatchObjectKey(time.Now().UTC())
 	archives := make([]logTraceArchive, 0, len(items))
 	records := make([]LogTrace, 0, len(items))
-	logIds := make([]int, 0, len(items))
+	logIds := make([]int64, 0, len(items))
 	for _, item := range items {
 		archive := item.Archive
 		archive.StoredAt = now
@@ -563,7 +563,7 @@ func buildLogTraceBatchObjectKey(t time.Time) string {
 	return path.Join(prefix, key)
 }
 
-func buildLogTraceBodyObjectKey(logId int, createdAt int64, requestId string, kind string) string {
+func buildLogTraceBodyObjectKey(logId int64, createdAt int64, requestId string, kind string) string {
 	t := time.Unix(createdAt, 0).UTC()
 	name := fmt.Sprintf("%d", logId)
 	if part := sanitizeTraceKeyPart(requestId); part != "" {
@@ -578,7 +578,7 @@ func buildLogTraceBodyObjectKey(logId int, createdAt int64, requestId string, ki
 	return path.Join(prefix, key)
 }
 
-func prepareLogTraceFullBodyFiles(trace interface{}, logId int, createdAt int64, requestId string) ([]relaycommon.TraceFullBodyFile, error) {
+func prepareLogTraceFullBodyFiles(trace interface{}, logId int64, createdAt int64, requestId string) ([]relaycommon.TraceFullBodyFile, error) {
 	payload, ok := trace.(*relaycommon.TracePayload)
 	if !ok || payload == nil {
 		return nil, nil
@@ -703,7 +703,7 @@ func boolFromInterface(value interface{}) bool {
 	return v
 }
 
-func GetLogTracePayload(ctx context.Context, logId int) (map[string]interface{}, error) {
+func GetLogTracePayload(ctx context.Context, logId int64) (map[string]interface{}, error) {
 	if logId <= 0 {
 		return nil, ErrLogTraceNotFound
 	}
@@ -737,7 +737,8 @@ func GetLogTracePayload(ctx context.Context, logId int) (map[string]interface{},
 	}
 
 	var log Log
-	if err := logReadDB().WithContext(ctx).Select("id", "created_at", "request_id", "external_request_id", "upstream_request_id", "other").Where("id = ?", logId).First(&log).Error; err != nil {
+	tableName := resolveLogReadTableForID(logId)
+	if err := logReadDB().WithContext(ctx).Table(logReadTableExpr(tableName)).Select("logs.id", "logs.created_at", "logs.request_id", "logs.external_request_id", "logs.upstream_request_id", "logs.other").Where("logs.id = ?", logId).First(&log).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrLogTraceNotFound
 		}
@@ -763,7 +764,7 @@ func GetLogTracePayload(ctx context.Context, logId int) (map[string]interface{},
 	}, nil
 }
 
-func decodeStoredLogTracePayload(raw []byte, logId int) (map[string]interface{}, error) {
+func decodeStoredLogTracePayload(raw []byte, logId int64) (map[string]interface{}, error) {
 	var payload map[string]interface{}
 	if err := common.Unmarshal(raw, &payload); err != nil {
 		return nil, err
@@ -774,7 +775,7 @@ func decodeStoredLogTracePayload(raw []byte, logId int) (map[string]interface{},
 			if !ok {
 				continue
 			}
-			if intFromInterface(tracePayload["log_id"]) == logId {
+			if int64FromInterface(tracePayload["log_id"]) == logId {
 				return tracePayload, nil
 			}
 		}

@@ -56,17 +56,17 @@ func TestGetPagedProviderKeysIncludesUsageAndChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to lookup provider key: %v", err)
 	}
-	if err := LOG_DB.Create(&Log{
+	if err := createLog(&Log{
 		UserId:        1,
 		Username:      "admin",
-		CreatedAt:     2,
+		CreatedAt:     common.GetTimestamp(),
 		Type:          LogTypeError,
 		Content:       "error request",
 		ModelName:     "grok-test",
 		Group:         "default",
 		RequestId:     "req-provider-key-2",
 		ProviderKeyId: providerKey.Id,
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("failed to create error log: %v", err)
 	}
 

@@ -126,7 +126,7 @@ func GetLogByKey(c *gin.Context) {
 }
 
 func GetLogTrace(c *gin.Context) {
-	logId, err := strconv.Atoi(c.Param("id"))
+	logId, err := strconv.ParseInt(c.Param("id"), 10, 64)
 	if err != nil || logId <= 0 {
 		common.ApiErrorMsg(c, "无效的日志 ID")
 		return

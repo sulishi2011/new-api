@@ -80,7 +80,11 @@ func normalizeDashboardDimension(input string) DashboardDimension {
 }
 
 func buildDashboardUsageBaseQuery(query DashboardUsageQuery) (*gorm.DB, error) {
-	tx := logReadDB().Model(&Log{}).Where("type = ?", LogTypeConsume)
+	tableName, err := resolveLogReadTable(query.StartTimestamp, query.EndTimestamp)
+	if err != nil {
+		return nil, err
+	}
+	tx := logReadDB().Table(logRawTableExpr(tableName)).Where("type = ?", LogTypeConsume)
 
 	if query.UserID > 0 {
 		tx = tx.Where("user_id = ?", query.UserID)

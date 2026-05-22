@@ -226,48 +226,14 @@ func TestPrepareLogTraceBatchItemPreservesMetadata(t *testing.T) {
 	}
 }
 
-func TestDeleteLogsByTypeBeforeDeletesTraceMetadata(t *testing.T) {
-	db := setupLogTraceTestDB(t)
-
-	oldConsume := Log{Type: LogTypeConsume, CreatedAt: 10, Content: "old consume"}
-	oldError := Log{Type: LogTypeError, CreatedAt: 10, Content: "old error"}
-	newConsume := Log{Type: LogTypeConsume, CreatedAt: 200, Content: "new consume"}
-	if err := db.Create(&oldConsume).Error; err != nil {
-		t.Fatalf("failed to create old consume log: %v", err)
-	}
-	if err := db.Create(&oldError).Error; err != nil {
-		t.Fatalf("failed to create old error log: %v", err)
-	}
-	if err := db.Create(&newConsume).Error; err != nil {
-		t.Fatalf("failed to create new consume log: %v", err)
-	}
-	if err := db.Create(&LogTrace{LogId: oldConsume.Id, Status: LogTraceStatusStored, CreatedAt: 10}).Error; err != nil {
-		t.Fatalf("failed to create trace metadata: %v", err)
-	}
+func TestDeleteLogsByTypeBeforeDisabledForShardedLogs(t *testing.T) {
+	setupLogTraceTestDB(t)
 
 	count, err := DeleteLogsByTypeBefore(context.Background(), LogTypeConsume, 100, 10)
-	if err != nil {
-		t.Fatalf("failed to delete old consume logs: %v", err)
+	if err == nil {
+		t.Fatal("expected sharded log cleanup to be disabled")
 	}
-	if count != 1 {
-		t.Fatalf("expected one deleted log, got %d", count)
-	}
-
-	var remaining []Log
-	if err := db.Order("id asc").Find(&remaining).Error; err != nil {
-		t.Fatalf("failed to query remaining logs: %v", err)
-	}
-	if len(remaining) != 2 {
-		t.Fatalf("expected two remaining logs, got %d", len(remaining))
-	}
-	if remaining[0].Id != oldError.Id || remaining[1].Id != newConsume.Id {
-		t.Fatalf("unexpected remaining logs: %#v", remaining)
-	}
-	var traceCount int64
-	if err := db.Model(&LogTrace{}).Where("log_id = ?", oldConsume.Id).Count(&traceCount).Error; err != nil {
-		t.Fatalf("failed to count trace metadata: %v", err)
-	}
-	if traceCount != 0 {
-		t.Fatalf("expected old consume trace metadata to be deleted, got %d", traceCount)
+	if count != 0 {
+		t.Fatalf("expected no deleted logs, got %d", count)
 	}
 }

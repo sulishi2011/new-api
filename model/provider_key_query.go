@@ -195,7 +195,8 @@ func getProviderKeyUsageStats(providerKeyIds []int) (map[int]providerKeyLogAggre
 	}
 
 	var rows []providerKeyLogAggregateRow
-	err := logReadDB().Model(&Log{}).
+	tableName := currentLogReadTable()
+	err := logReadDB().Table(logRawTableExpr(tableName)).
 		Select(
 			"provider_key_id, COUNT(*) AS request_count, "+
 				"SUM(CASE WHEN type = ? THEN 1 ELSE 0 END) AS success_count, "+

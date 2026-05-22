@@ -48,7 +48,7 @@ func StartLogRetentionTask() {
 }
 
 func runLogRetentionOnce() {
-	if !common.LogRetentionEnabled && !common.TraceStorageEnabled {
+	if !common.TraceStorageEnabled {
 		return
 	}
 	if !logRetentionRunning.CompareAndSwap(false, true) {
@@ -58,12 +58,7 @@ func runLogRetentionOnce() {
 
 	ctx := context.Background()
 	now := time.Now().UTC()
-	if common.TraceStorageEnabled {
-		cleanupExpiredTraceMetadata(ctx, now)
-	}
-	if common.LogRetentionEnabled {
-		cleanupLogsByRetentionPolicy(ctx, now)
-	}
+	cleanupExpiredTraceMetadata(ctx, now)
 }
 
 func cleanupExpiredTraceMetadata(ctx context.Context, now time.Time) {

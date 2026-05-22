@@ -9,7 +9,7 @@ import (
 
 type UsageLedger struct {
 	Id                   int      `json:"id"`
-	NewapiLogId          int      `json:"newapi_log_id" gorm:"uniqueIndex"`
+	NewapiLogId          int64    `json:"newapi_log_id" gorm:"uniqueIndex"`
 	RequestId            string   `json:"request_id" gorm:"type:varchar(64);index;default:''"`
 	ExternalRequestId    string   `json:"external_request_id" gorm:"type:varchar(128);index;default:''"`
 	Timestamp            int64    `json:"timestamp" gorm:"bigint;index;index:idx_usage_ledger_vendor_profile_time,priority:2;index:idx_usage_ledger_channel_time,priority:2;index:idx_usage_ledger_model_time,priority:2;index:idx_usage_ledger_token_time,priority:2;index:idx_usage_ledger_provider_key_time,priority:2;index:idx_usage_ledger_group_time,priority:2;index:idx_usage_ledger_biz_scene_time,priority:3"`

@@ -182,7 +182,7 @@ func TestRecordConsumeLogStoresCostQuota(t *testing.T) {
 	})
 
 	var log Log
-	if err := LOG_DB.Order("id desc").First(&log).Error; err != nil {
+	if err := LOG_DB.Table(currentLogReadTable()).Order("id desc").First(&log).Error; err != nil {
 		t.Fatalf("failed to query latest log: %v", err)
 	}
 	if log.Quota != 125 {
@@ -244,7 +244,7 @@ func TestRecordConsumeLogUsesVendorProfileDiscountBeforeChannelCostRatio(t *test
 	})
 
 	var log Log
-	if err := LOG_DB.Order("id desc").First(&log).Error; err != nil {
+	if err := LOG_DB.Table(currentLogReadTable()).Order("id desc").First(&log).Error; err != nil {
 		t.Fatalf("failed to query latest log: %v", err)
 	}
 	if log.CostQuota == nil {

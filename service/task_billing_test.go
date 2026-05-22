@@ -58,10 +58,12 @@ func TestMain(m *testing.M) {
 func truncate(t *testing.T) {
 	t.Helper()
 	t.Cleanup(func() {
+		currentLogTable := "logs_" + time.Now().UTC().Format("200601")
 		model.DB.Exec("DELETE FROM tasks")
 		model.DB.Exec("DELETE FROM users")
 		model.DB.Exec("DELETE FROM tokens")
 		model.DB.Exec("DELETE FROM logs")
+		model.DB.Exec("DELETE FROM " + currentLogTable)
 		model.DB.Exec("DELETE FROM channels")
 		model.DB.Exec("DELETE FROM top_ups")
 		model.DB.Exec("DELETE FROM user_subscriptions")
@@ -170,7 +172,8 @@ func getSubscriptionUsed(t *testing.T, id int) int64 {
 func getLastLog(t *testing.T) *model.Log {
 	t.Helper()
 	var log model.Log
-	err := model.LOG_DB.Order("id desc").First(&log).Error
+	currentLogTable := "logs_" + time.Now().UTC().Format("200601")
+	err := model.LOG_DB.Table(currentLogTable).Order("id desc").First(&log).Error
 	if err != nil {
 		return nil
 	}
@@ -180,7 +183,8 @@ func getLastLog(t *testing.T) *model.Log {
 func countLogs(t *testing.T) int64 {
 	t.Helper()
 	var count int64
-	model.LOG_DB.Model(&model.Log{}).Count(&count)
+	currentLogTable := "logs_" + time.Now().UTC().Format("200601")
+	model.LOG_DB.Table(currentLogTable).Count(&count)
 	return count
 }
 

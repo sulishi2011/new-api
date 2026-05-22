@@ -293,6 +293,12 @@ func InitLogDB() (err error) {
 	if os.Getenv("LOG_SQL_DSN") == "" {
 		LOG_DB = DB
 		LOG_READ_DB, err = initReadDB("LOG_SQL_READ_DSN", LOG_DB)
+		if err != nil {
+			return err
+		}
+		if common.IsMasterNode {
+			_, err = ensureLogTableForTimestamp(common.GetTimestamp())
+		}
 		return err
 	}
 	db, err := chooseDB("LOG_SQL_DSN", true)
@@ -320,6 +326,10 @@ func InitLogDB() (err error) {
 		}
 		common.SysLog("database migration started")
 		err = migrateLOGDB()
+		if err != nil {
+			return err
+		}
+		_, err = ensureLogTableForTimestamp(common.GetTimestamp())
 		return err
 	} else {
 		common.FatalLog(err)
@@ -371,6 +381,17 @@ func migrateDB() error {
 	)
 	if err != nil {
 		return err
+	}
+	if err := migrateLogIndexes(DB); err != nil {
+		return err
+	}
+	if common.UsingPostgreSQL {
+		if err := ensurePostgresBigintColumn(DB, "log_traces", "log_id"); err != nil {
+			return err
+		}
+		if err := ensurePostgresBigintColumn(DB, "usage_ledgers", "newapi_log_id"); err != nil {
+			return err
+		}
 	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
@@ -448,6 +469,17 @@ func migrateDBFast() error {
 			return err
 		}
 	}
+	if err := migrateLogIndexes(DB); err != nil {
+		return err
+	}
+	if common.UsingPostgreSQL {
+		if err := ensurePostgresBigintColumn(DB, "log_traces", "log_id"); err != nil {
+			return err
+		}
+		if err := ensurePostgresBigintColumn(DB, "usage_ledgers", "newapi_log_id"); err != nil {
+			return err
+		}
+	}
 	if common.UsingSQLite {
 		if err := ensureSubscriptionPlanTableSQLite(); err != nil {
 			return err
@@ -472,7 +504,399 @@ func migrateLOGDB() error {
 	if err = LOG_DB.AutoMigrate(&LogTrace{}); err != nil {
 		return err
 	}
+	if err = migrateLogIndexes(LOG_DB); err != nil {
+		return err
+	}
+	if logDatabaseType() == common.DatabaseTypePostgreSQL {
+		if err := ensurePostgresBigintColumn(LOG_DB, "log_traces", "log_id"); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func migrateLogIndexes(db *gorm.DB) error {
+	if db == nil {
+		return nil
+	}
+	if db.Migrator().HasTable(&Log{}) {
+		if err := migrateBaseLogIndexes(db); err != nil {
+			return err
+		}
+	}
+	tables, err := db.Migrator().GetTables()
+	if err != nil {
+		return err
+	}
+	for _, tableName := range tables {
+		if !isMonthlyLogTable(tableName) {
+			continue
+		}
+		if err := migrateLogShardIndexes(db, tableName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func migrateBaseLogIndexes(db *gorm.DB) error {
+	if err := ensureLogIndexColumns(db, "idx_created_at_id", []string{"created_at", "id"}); err != nil {
+		return err
+	}
+
+	for _, indexName := range []string{
+		"idx_logs_type_created_id",
+		"idx_logs_channel_created_id",
+		"idx_logs_vendor_profile_created",
+		"idx_logs_biz_line_scene_created",
+	} {
+		if err := createLogIndexIfMissing(db, indexName); err != nil {
+			return err
+		}
+	}
+
+	for _, indexName := range []string{
+		"idx_user_id_id",
+		"idx_created_at_type",
+		"idx_logs_channel_type_created_id",
+		"index_username_model_name",
+	} {
+		if err := dropLogIndexIfExists(db, indexName); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func migrateLogShardIndexes(db *gorm.DB, tableName string) error {
+	if db == nil || tableName == "" || !db.Migrator().HasTable(tableName) {
+		return nil
+	}
+	for _, spec := range logShardTargetIndexSpecs() {
+		indexName := logShardIndexNameForDB(db, tableName, spec.Suffix)
+		if err := ensureLogTableIndexColumns(db, tableName, indexName, spec.Columns); err != nil {
+			return err
+		}
+	}
+	for _, indexName := range logShardObsoleteIndexNames(db, tableName) {
+		if err := dropLogTableIndexIfExists(db, tableName, indexName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func createLogIndexIfMissing(db *gorm.DB, indexName string) error {
+	if db.Migrator().HasIndex(&Log{}, indexName) {
+		return nil
+	}
+	if err := db.Migrator().CreateIndex(&Log{}, indexName); err != nil {
+		return fmt.Errorf("failed to create logs index %s: %w", indexName, err)
+	}
+	return nil
+}
+
+func dropLogIndexIfExists(db *gorm.DB, indexName string) error {
+	if !db.Migrator().HasIndex(&Log{}, indexName) {
+		return nil
+	}
+	if err := db.Migrator().DropIndex(&Log{}, indexName); err != nil {
+		return fmt.Errorf("failed to drop logs index %s: %w", indexName, err)
+	}
+	return nil
+}
+
+func ensureLogTableIndexColumns(db *gorm.DB, tableName string, indexName string, expectedColumns []string) error {
+	columns, err := getLogIndexColumns(db, tableName, indexName)
+	if err != nil {
+		return fmt.Errorf("failed to inspect logs index %s on %s: %w", indexName, tableName, err)
+	}
+	if sameColumns(columns, expectedColumns) {
+		return nil
+	}
+	if len(columns) > 0 {
+		if err := dropLogTableIndexIfExists(db, tableName, indexName); err != nil {
+			return err
+		}
+	}
+	if err := createLogTableIndex(db, tableName, indexName, expectedColumns); err != nil {
+		return fmt.Errorf("failed to create logs index %s on %s: %w", indexName, tableName, err)
+	}
+	return nil
+}
+
+func createLogTableIndex(db *gorm.DB, tableName string, indexName string, columns []string) error {
+	return db.Exec(buildCreateLogTableIndexSQLForDB(db, tableName, indexName, columns, false)).Error
+}
+
+func dropLogTableIndexIfExists(db *gorm.DB, tableName string, indexName string) error {
+	columns, err := getLogIndexColumns(db, tableName, indexName)
+	if err != nil {
+		return fmt.Errorf("failed to inspect logs index %s on %s: %w", indexName, tableName, err)
+	}
+	if len(columns) == 0 {
+		return nil
+	}
+	if err := db.Exec(buildDropLogTableIndexSQLForDB(db, tableName, indexName)).Error; err != nil {
+		return fmt.Errorf("failed to drop logs index %s on %s: %w", indexName, tableName, err)
+	}
+	return nil
+}
+
+func ensureLogIndexColumns(db *gorm.DB, indexName string, expectedColumns []string) error {
+	if db.Migrator().HasIndex(&Log{}, indexName) {
+		columns, err := getLogIndexColumns(db, "logs", indexName)
+		if err != nil {
+			return fmt.Errorf("failed to inspect logs index %s: %w", indexName, err)
+		}
+		if sameColumns(columns, expectedColumns) {
+			return nil
+		}
+		if err := db.Migrator().DropIndex(&Log{}, indexName); err != nil {
+			return fmt.Errorf("failed to rebuild logs index %s: %w", indexName, err)
+		}
+	}
+	if err := db.Migrator().CreateIndex(&Log{}, indexName); err != nil {
+		return fmt.Errorf("failed to create logs index %s: %w", indexName, err)
+	}
+	return nil
+}
+
+type logIndexSpec struct {
+	Suffix  string
+	Columns []string
+}
+
+func logShardTargetIndexSpecs() []logIndexSpec {
+	return []logIndexSpec{
+		{Suffix: "created_at_id", Columns: []string{"created_at", "id"}},
+		{Suffix: "type_created_id", Columns: []string{"type", "created_at", "id"}},
+		{Suffix: "channel_created_id", Columns: []string{"channel_id", "created_at", "id"}},
+		{Suffix: "vendor_profile_created", Columns: []string{"vendor_profile_id", "created_at"}},
+		{Suffix: "biz_line_scene_created", Columns: []string{"biz_line", "biz_scene", "created_at"}},
+		{Suffix: "request_id", Columns: []string{"request_id"}},
+		{Suffix: "external_request_id", Columns: []string{"external_request_id"}},
+		{Suffix: "upstream_request_id", Columns: []string{"upstream_request_id"}},
+		{Suffix: "provider_key_id", Columns: []string{"provider_key_id"}},
+		{Suffix: "token_id", Columns: []string{"token_id"}},
+		{Suffix: "group_created", Columns: []string{"group", "created_at"}},
+		{Suffix: "model_name", Columns: []string{"model_name"}},
+		{Suffix: "username", Columns: []string{"username"}},
+		{Suffix: "token_name", Columns: []string{"token_name"}},
+	}
+}
+
+func logShardObsoleteIndexNames(db *gorm.DB, tableName string) []string {
+	names := []string{
+		"idx_user_id_id",
+		"idx_created_at_type",
+		"idx_logs_channel_type_created_id",
+		"index_username_model_name",
+	}
+	for _, suffix := range []string{
+		"user_created_id",
+		"created_at_type",
+		"channel_type_created_id",
+		"username_model_name",
+	} {
+		names = append(names, logShardIndexNameForDB(db, tableName, suffix))
+	}
+	return names
+}
+
+func logShardIndexName(tableName string, suffix string) string {
+	if logDatabaseType() == common.DatabaseTypeMySQL {
+		return baseLogIndexNameForSuffix(suffix)
+	}
+	return "idx_" + tableName + "_" + suffix
+}
+
+func logShardIndexNameForDB(db *gorm.DB, tableName string, suffix string) string {
+	if db != nil && db.Dialector.Name() == "mysql" {
+		return baseLogIndexNameForSuffix(suffix)
+	}
+	return "idx_" + tableName + "_" + suffix
+}
+
+func baseLogIndexNameForSuffix(suffix string) string {
+	switch suffix {
+	case "created_at_id":
+		return "idx_created_at_id"
+	case "type_created_id":
+		return "idx_logs_type_created_id"
+	case "channel_created_id":
+		return "idx_logs_channel_created_id"
+	case "vendor_profile_created":
+		return "idx_logs_vendor_profile_created"
+	case "biz_line_scene_created":
+		return "idx_logs_biz_line_scene_created"
+	case "request_id":
+		return "idx_logs_request_id"
+	case "external_request_id":
+		return "idx_logs_external_request_id"
+	case "upstream_request_id":
+		return "idx_logs_upstream_request_id"
+	case "provider_key_id":
+		return "idx_logs_provider_key_id"
+	case "token_id":
+		return "idx_logs_token_id"
+	case "group_created":
+		return "idx_logs_group_created"
+	case "model_name":
+		return "idx_logs_model_name"
+	case "username":
+		return "idx_logs_username"
+	case "token_name":
+		return "idx_logs_token_name"
+	default:
+		return "idx_logs_" + suffix
+	}
+}
+
+func isMonthlyLogTable(tableName string) bool {
+	if !strings.HasPrefix(tableName, logTablePrefix) {
+		return false
+	}
+	suffix := strings.TrimPrefix(tableName, logTablePrefix)
+	if len(suffix) != len("200601") {
+		return false
+	}
+	for _, r := range suffix {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func buildCreateLogTableIndexSQL(tableName string, indexName string, columns []string, ifNotExists bool) string {
+	return buildCreateLogTableIndexSQLForType(logDatabaseType(), tableName, indexName, columns, ifNotExists)
+}
+
+func buildCreateLogTableIndexSQLForDB(db *gorm.DB, tableName string, indexName string, columns []string, ifNotExists bool) string {
+	return buildCreateLogTableIndexSQLForType(logDatabaseTypeForDB(db), tableName, indexName, columns, ifNotExists)
+}
+
+func buildCreateLogTableIndexSQLForType(databaseType string, tableName string, indexName string, columns []string, ifNotExists bool) string {
+	existsClause := ""
+	if ifNotExists && databaseType != common.DatabaseTypeMySQL {
+		existsClause = " IF NOT EXISTS"
+	}
+	return fmt.Sprintf(
+		"CREATE INDEX%s %s ON %s (%s)",
+		existsClause,
+		quoteLogIdentifierForType(databaseType, indexName),
+		quoteLogIdentifierForType(databaseType, tableName),
+		quoteLogColumnListForType(databaseType, columns),
+	)
+}
+
+func buildDropLogTableIndexSQLForDB(db *gorm.DB, tableName string, indexName string) string {
+	databaseType := logDatabaseTypeForDB(db)
+	if databaseType == common.DatabaseTypeMySQL {
+		return fmt.Sprintf("DROP INDEX %s ON %s", quoteLogIdentifierForType(databaseType, indexName), quoteLogIdentifierForType(databaseType, tableName))
+	}
+	return fmt.Sprintf("DROP INDEX %s", quoteLogIdentifierForType(databaseType, indexName))
+}
+
+func quoteLogColumnListForType(databaseType string, columns []string) string {
+	quoted := make([]string, 0, len(columns))
+	for _, column := range columns {
+		quoted = append(quoted, quoteLogIdentifierForType(databaseType, column))
+	}
+	return strings.Join(quoted, ", ")
+}
+
+func quoteLogIdentifierForType(databaseType string, identifier string) string {
+	if databaseType == common.DatabaseTypePostgreSQL {
+		return `"` + strings.ReplaceAll(identifier, `"`, `""`) + `"`
+	}
+	return "`" + strings.ReplaceAll(identifier, "`", "``") + "`"
+}
+
+func logDatabaseTypeForDB(db *gorm.DB) string {
+	if db == nil {
+		return logDatabaseType()
+	}
+	switch db.Dialector.Name() {
+	case "postgres":
+		return common.DatabaseTypePostgreSQL
+	case "mysql":
+		return common.DatabaseTypeMySQL
+	default:
+		return common.DatabaseTypeSQLite
+	}
+}
+
+type indexColumn struct {
+	ColumnName string `gorm:"column:column_name"`
+	Name       string `gorm:"column:name"`
+}
+
+func getLogIndexColumns(db *gorm.DB, tableName string, indexName string) ([]string, error) {
+	var rows []indexColumn
+
+	switch db.Dialector.Name() {
+	case "mysql":
+		err := db.Raw(`SELECT column_name FROM information_schema.statistics
+			WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?
+			ORDER BY seq_in_index`, tableName, indexName).Scan(&rows).Error
+		return indexColumnNames(rows), err
+	case "postgres":
+		err := db.Raw(`SELECT a.attname AS column_name
+			FROM pg_class t
+			JOIN pg_namespace n ON n.oid = t.relnamespace
+			JOIN pg_index i ON t.oid = i.indrelid
+			JOIN pg_class ix ON ix.oid = i.indexrelid
+			JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+			JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
+			WHERE n.nspname = current_schema() AND t.relname = ? AND ix.relname = ?
+			ORDER BY k.ord`, tableName, indexName).Scan(&rows).Error
+		return indexColumnNames(rows), err
+	case "sqlite":
+		err := db.Raw("PRAGMA index_info(" + quoteSQLiteIdentifier(indexName) + ")").Scan(&rows).Error
+		return indexColumnNames(rows), err
+	default:
+		indexes, err := db.Migrator().GetIndexes(&Log{})
+		if err != nil {
+			return nil, err
+		}
+		for _, index := range indexes {
+			if index.Name() == indexName {
+				return index.Columns(), nil
+			}
+		}
+		return nil, nil
+	}
+}
+
+func indexColumnNames(rows []indexColumn) []string {
+	columns := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.ColumnName != "" {
+			columns = append(columns, row.ColumnName)
+			continue
+		}
+		columns = append(columns, row.Name)
+	}
+	return columns
+}
+
+func sameColumns(columns []string, expected []string) bool {
+	if len(columns) != len(expected) {
+		return false
+	}
+	for i := range columns {
+		if !strings.EqualFold(columns[i], expected[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func quoteSQLiteIdentifier(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
 }
 
 type sqliteColumnDef struct {
