@@ -998,11 +998,12 @@ func GetSyncableChannels(c *gin.Context) {
 	for _, channel := range channels {
 		if channel.GetBaseURL() != "" {
 			syncableChannels = append(syncableChannels, dto.SyncableChannel{
-				ID:      channel.Id,
-				Name:    channel.Name,
-				BaseURL: channel.GetBaseURL(),
-				Status:  channel.Status,
-				Type:    channel.Type,
+				ID:                channel.Id,
+				Name:              channel.Name,
+				VendorProfileCode: channel.GetVendorProfileCode(),
+				BaseURL:           channel.GetBaseURL(),
+				Status:            channel.Status,
+				Type:              channel.Type,
 			})
 		}
 	}

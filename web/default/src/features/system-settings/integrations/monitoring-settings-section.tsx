@@ -20,8 +20,16 @@ import { useEffect, useMemo, useRef } from 'react'
 import * as z from 'zod'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import {
+  createAutoDisablePolicyGroup,
+  normalizeAutoDisablePolicyGroupsString,
+  parseAutoDisablePolicyGroups,
+  serializeAutoDisablePolicyGroups,
+  type AutoDisablePolicyGroup,
+} from '@/lib/auto-disable-policy-groups'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 import { Button } from '@/components/ui/button'
 import {
@@ -53,6 +61,7 @@ const monitoringSchema = z
     AutomaticDisableChannelEnabled: z.boolean(),
     AutomaticEnableChannelEnabled: z.boolean(),
     AutomaticDisableKeywords: z.string(),
+    AutomaticDisablePolicyGroups: z.string(),
     AutomaticDisableStatusCodes: z.string(),
     AutomaticRetryStatusCodes: z.string(),
     monitor_setting: z.object({
@@ -131,6 +140,17 @@ const monitoringSchema = z
       })
     }
 
+    const policyGroupsResult = normalizeAutoDisablePolicyGroupsString(
+      values.AutomaticDisablePolicyGroups
+    )
+    if (!policyGroupsResult.ok) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['AutomaticDisablePolicyGroups'],
+        message: `Invalid auto-disable policy groups: ${policyGroupsResult.error}`,
+      })
+    }
+
     const retryParsed = parseHttpStatusCodeRules(
       values.AutomaticRetryStatusCodes
     )
@@ -155,6 +175,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableChannelEnabled: boolean
     AutomaticEnableChannelEnabled: boolean
     AutomaticDisableKeywords: string
+    AutomaticDisablePolicyGroups: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
@@ -182,6 +203,7 @@ type NormalizedMonitoringValues = {
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
+  AutomaticDisablePolicyGroups: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
@@ -213,6 +235,9 @@ const buildFormDefaults = (
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
   ),
+  AutomaticDisablePolicyGroups: normalizeAutoDisablePolicyGroupsString(
+    defaults.AutomaticDisablePolicyGroups ?? ''
+  ).value,
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
   monitor_setting: {
@@ -253,6 +278,9 @@ const normalizeDefaults = (
   AutomaticDisableKeywords: normalizeLineEndings(
     defaults.AutomaticDisableKeywords ?? ''
   ),
+  AutomaticDisablePolicyGroups: normalizeAutoDisablePolicyGroupsString(
+    defaults.AutomaticDisablePolicyGroups ?? ''
+  ).value,
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticDisableStatusCodes ?? ''
   ).normalized,
@@ -299,6 +327,9 @@ const normalizeFormValues = (
   AutomaticDisableKeywords: normalizeLineEndings(
     values.AutomaticDisableKeywords
   ),
+  AutomaticDisablePolicyGroups: normalizeAutoDisablePolicyGroupsString(
+    values.AutomaticDisablePolicyGroups
+  ).value,
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticDisableStatusCodes
   ).normalized,
@@ -330,6 +361,144 @@ const normalizeFormValues = (
   'monitor_setting.channel_disabled_webhook_secret':
     values.monitor_setting.channel_disabled_webhook_secret.trim(),
 })
+
+function AutoDisablePolicyGroupsEditor({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  const { t } = useTranslation()
+  const groups = useMemo(() => parseAutoDisablePolicyGroups(value), [value])
+
+  const updateGroups = (nextGroups: AutoDisablePolicyGroup[]) => {
+    onChange(serializeAutoDisablePolicyGroups(nextGroups))
+  }
+
+  const updateGroup = (
+    index: number,
+    patch: Partial<AutoDisablePolicyGroup>
+  ) => {
+    updateGroups(
+      groups.map((group, groupIndex) =>
+        groupIndex === index ? { ...group, ...patch } : group
+      )
+    )
+  }
+  const createUniqueGroupName = () => {
+    const baseName = t('New policy group')
+    const usedNames = new Set(groups.map((group) => group.name.toLowerCase()))
+    let name = baseName
+    let suffix = 2
+    while (usedNames.has(name.toLowerCase())) {
+      name = `${baseName} ${suffix}`
+      suffix += 1
+    }
+    return name
+  }
+
+  return (
+    <div className='space-y-4 rounded-md border p-4'>
+      <div className='flex flex-wrap items-start justify-between gap-3'>
+        <div className='space-y-1'>
+          <div className='text-sm font-medium'>
+            {t('Auto-disable policy groups')}
+          </div>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Policy groups let selected channels use dedicated failure keywords instead of the default keyword list.'
+            )}
+          </p>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'Disabled groups are not applied; channels assigned to them fall back to the default keywords.'
+            )}
+          </p>
+        </div>
+        <Button
+          type='button'
+          size='sm'
+          onClick={() =>
+            updateGroups([
+              ...groups,
+              createAutoDisablePolicyGroup(createUniqueGroupName()),
+            ])
+          }
+        >
+          <Plus className='mr-2 h-4 w-4' />
+          {t('Add policy group')}
+        </Button>
+      </div>
+
+      {groups.length === 0 ? (
+        <div className='text-muted-foreground rounded-md border border-dashed p-4 text-sm'>
+          {t('No policy groups configured')}
+        </div>
+      ) : (
+        <div className='space-y-3'>
+          {groups.map((group, index) => (
+            <div key={group.id} className='space-y-3 rounded-md border p-3'>
+              <div className='grid gap-3 md:grid-cols-[1fr_auto]'>
+                <div className='space-y-2'>
+                  <FormLabel>{t('Policy group name')}</FormLabel>
+                  <Input
+                    value={group.name}
+                    onChange={(event) =>
+                      updateGroup(index, { name: event.target.value })
+                    }
+                    placeholder={t('Policy group name')}
+                  />
+                </div>
+                <div className='flex items-end gap-3 pb-2'>
+                  <div className='space-y-1'>
+                    <FormLabel>{t('Enabled')}</FormLabel>
+                    <Switch
+                      checked={group.enabled}
+                      onCheckedChange={(enabled) =>
+                        updateGroup(index, { enabled })
+                      }
+                    />
+                  </div>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='icon'
+                    className='text-destructive'
+                    title={t('Delete policy group')}
+                    onClick={() =>
+                      updateGroups(
+                        groups.filter((_, groupIndex) => groupIndex !== index)
+                      )
+                    }
+                  >
+                    <Trash2 className='h-4 w-4' />
+                  </Button>
+                </div>
+              </div>
+              <div className='space-y-2'>
+                <FormLabel>{t('Keywords')}</FormLabel>
+                <Textarea
+                  rows={4}
+                  value={group.keywords.join('\n')}
+                  placeholder={t('one keyword per line')}
+                  onChange={(event) =>
+                    updateGroup(index, {
+                      keywords: event.target.value.split('\n'),
+                    })
+                  }
+                />
+                <p className='text-muted-foreground text-sm'>
+                  {t('One keyword per line for this policy group.')}
+                </p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function MonitoringSettingsSection({
   defaultValues,
@@ -867,6 +1036,22 @@ export function MonitoringSettingsSection({
                     'If an upstream error contains any of these keywords (case insensitive), the channel will be disabled automatically.'
                   )}
                 </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+
+          <FormField
+            control={form.control}
+            name='AutomaticDisablePolicyGroups'
+            render={({ field }) => (
+              <FormItem>
+                <FormControl>
+                  <AutoDisablePolicyGroupsEditor
+                    value={field.value}
+                    onChange={field.onChange}
+                  />
+                </FormControl>
                 <FormMessage />
               </FormItem>
             )}

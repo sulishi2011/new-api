@@ -41,7 +41,29 @@ import { Modal, Button } from '@douyinfe/semi-ui';
 import { openCodexUsageModal } from '../../components/table/channels/modals/CodexUsageModal';
 
 const CHANNEL_TIMEOUT_DEFAULTS_OPTION_KEY = 'ChannelTimeoutDefaults';
+const AUTO_DISABLE_POLICY_GROUPS_OPTION_KEY = 'AutomaticDisablePolicyGroups';
 const CHANNEL_ARCHIVED_TAB_KEY = 'archived';
+
+const parseAutoDisablePolicyGroups = (value) => {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((group) => ({
+        id: String(group?.id || '').trim(),
+        name: String(group?.name || '').trim(),
+        enabled: group?.enabled !== false,
+      }))
+      .filter((group) => group.id && group.name);
+  } catch {
+    return [];
+  }
+};
 
 const parseChannelTimeoutDefaults = (rawValue) => {
   if (typeof rawValue !== 'string' || rawValue.trim() === '') {
@@ -143,6 +165,7 @@ export const useChannelsData = () => {
   const [globalPassThroughEnabled, setGlobalPassThroughEnabled] =
     useState(false);
   const [channelTimeoutDefaults, setChannelTimeoutDefaults] = useState(null);
+  const [autoDisablePolicyGroups, setAutoDisablePolicyGroups] = useState([]);
 
   const fetchChannelPageOptions = async () => {
     try {
@@ -166,9 +189,16 @@ export const useChannelsData = () => {
       setChannelTimeoutDefaults(
         parseChannelTimeoutDefaults(timeoutDefaultsOption?.value),
       );
+      const autoDisablePolicyGroupsOption = data.find(
+        (item) => item?.key === AUTO_DISABLE_POLICY_GROUPS_OPTION_KEY,
+      );
+      setAutoDisablePolicyGroups(
+        parseAutoDisablePolicyGroups(autoDisablePolicyGroupsOption?.value),
+      );
     } catch (error) {
       setGlobalPassThroughEnabled(false);
       setChannelTimeoutDefaults(null);
+      setAutoDisablePolicyGroups([]);
     }
   };
 
@@ -1367,6 +1397,7 @@ export const useChannelsData = () => {
     compactMode,
     globalPassThroughEnabled,
     channelTimeoutDefaults,
+    autoDisablePolicyGroups,
     vendorProfiles,
     fetchVendorProfiles,
 

@@ -59,6 +59,7 @@ import { getLogTrace } from '../../api'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
+  formatLogVendorChannel,
   getParamOverrideActionLabel,
   parseAuditLine,
   decodeBillingExprB64,
@@ -768,17 +769,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
               {props.isAdmin && props.log.channel > 0 && (
                 <DetailRow
                   label={t('Channel')}
-                  value={
-                    <span>
-                      {props.log.channel}
-                      {props.log.channel_name && (
-                        <span className='text-muted-foreground'>
-                          {' '}
-                          ({props.log.channel_name})
-                        </span>
-                      )}
-                    </span>
-                  }
+                  value={formatLogVendorChannel(props.log)}
                   mono
                 />
               )}

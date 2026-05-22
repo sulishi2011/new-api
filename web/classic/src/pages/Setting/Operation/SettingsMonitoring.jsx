@@ -18,7 +18,18 @@ For commercial licensing, please contact support@quantumnous.com
 */
 
 import React, { useEffect, useState, useRef } from 'react';
-import { Button, Col, Form, Row, Spin } from '@douyinfe/semi-ui';
+import {
+  Button,
+  Col,
+  Form,
+  Input,
+  Row,
+  Space,
+  Spin,
+  Switch,
+  TextArea,
+  Typography,
+} from '@douyinfe/semi-ui';
 import {
   compareObjects,
   API,
@@ -30,6 +41,8 @@ import {
 } from '../../../helpers';
 import { useTranslation } from 'react-i18next';
 import HttpStatusCodeRulesInput from '../../../components/settings/HttpStatusCodeRulesInput';
+
+const { Text } = Typography;
 
 const secretOptionKeys = new Set([
   'monitor_setting.request_failure_webhook_secret',
@@ -43,12 +56,99 @@ const trimOptionKeys = new Set([
   'monitor_setting.channel_disabled_webhook_secret',
 ]);
 
+const createPolicyGroupId = () =>
+  `policy_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
+
+function normalizeKeywords(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || ''))
+    : String(value || '').split('\n');
+}
+
+function normalizePolicyGroups(groups) {
+  if (!Array.isArray(groups)) {
+    throw new Error('policy groups must be an array');
+  }
+  const ids = new Set();
+  const names = new Set();
+  return groups.map((group, index) => {
+    const id = String(group?.id || '').trim();
+    const name = String(group?.name || '').trim();
+    if (!id) {
+      throw new Error(`policy group #${index + 1} id is required`);
+    }
+    if (!name) {
+      throw new Error(`policy group #${index + 1} name is required`);
+    }
+    if (ids.has(id)) {
+      throw new Error(`duplicate policy group id: ${id}`);
+    }
+    const nameKey = name.toLowerCase();
+    if (names.has(nameKey)) {
+      throw new Error(`duplicate policy group name: ${name}`);
+    }
+    ids.add(id);
+    names.add(nameKey);
+    return {
+      id,
+      name,
+      enabled: group?.enabled !== false,
+      keywords: normalizeKeywords(group?.keywords || []),
+    };
+  });
+}
+
+function normalizePolicyGroupsString(value) {
+  const raw = String(value || '').trim();
+  if (!raw) {
+    return { ok: true, value: '[]', groups: [] };
+  }
+  try {
+    const groups = normalizePolicyGroups(JSON.parse(raw));
+    return {
+      ok: true,
+      value: JSON.stringify(groups, null, 2),
+      groups,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      value: raw,
+      groups: [],
+      error: error?.message || String(error),
+    };
+  }
+}
+
+function parsePolicyGroups(value) {
+  const result = normalizePolicyGroupsString(value);
+  return result.ok ? result.groups : [];
+}
+
+function serializePolicyGroups(groups) {
+  return JSON.stringify(
+    groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      enabled: group.enabled !== false,
+      keywords: Array.isArray(group.keywords)
+        ? group.keywords.map((keyword) => String(keyword || ''))
+        : [],
+    })),
+    null,
+    2,
+  );
+}
+
 const defaultMonitoringInputs = {
   ChannelDisableThreshold: '',
   QuotaRemindThreshold: '',
   AutomaticDisableChannelEnabled: false,
   AutomaticEnableChannelEnabled: false,
   AutomaticDisableKeywords: '',
+  AutomaticDisablePolicyGroups: '[]',
   AutomaticDisableStatusCodes: '401',
   AutomaticRetryStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
@@ -86,12 +186,154 @@ function normalizeMonitoringInputs(values = {}) {
 
     const stringValue =
       value === undefined || value === null ? '' : String(value);
+    if (key === 'AutomaticDisablePolicyGroups') {
+      const result = normalizePolicyGroupsString(stringValue);
+      normalized[key] = result.ok ? result.value : stringValue;
+      continue;
+    }
     normalized[key] = trimOptionKeys.has(key)
       ? stringValue.trim()
       : stringValue;
   }
 
   return normalized;
+}
+
+function AutoDisablePolicyGroupsEditor({ value, onChange }) {
+  const { t } = useTranslation();
+  const groups = parsePolicyGroups(value);
+
+  const updateGroups = (nextGroups) => {
+    onChange(serializePolicyGroups(nextGroups));
+  };
+
+  const updateGroup = (index, patch) => {
+    const nextGroups = groups.map((group, groupIndex) =>
+      groupIndex === index ? { ...group, ...patch } : group,
+    );
+    updateGroups(nextGroups);
+  };
+
+  const addGroup = () => {
+    const baseName = t('新策略组');
+    const usedNames = new Set(groups.map((group) => group.name.toLowerCase()));
+    let name = baseName;
+    let suffix = 2;
+    while (usedNames.has(name.toLowerCase())) {
+      name = `${baseName} ${suffix}`;
+      suffix += 1;
+    }
+    updateGroups([
+      ...groups,
+      {
+        id: createPolicyGroupId(),
+        name,
+        enabled: true,
+        keywords: [],
+      },
+    ]);
+  };
+
+  const removeGroup = (index) => {
+    updateGroups(groups.filter((_, groupIndex) => groupIndex !== index));
+  };
+
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        padding: 16,
+        border: '1px solid var(--semi-color-border)',
+        borderRadius: 8,
+        background: 'var(--semi-color-fill-0)',
+      }}
+    >
+      <div className='flex items-center justify-between gap-2 flex-wrap'>
+        <Space vertical spacing={2} align='start'>
+          <Text strong>{t('自动禁用策略组')}</Text>
+          <Text type='tertiary' size='small'>
+            {t('策略组用于让指定渠道使用专用失败关键词，不影响默认关键词')}
+          </Text>
+          <Text type='tertiary' size='small'>
+            {t('已禁用的策略组不会生效，绑定该组的渠道会回退到默认关键词')}
+          </Text>
+        </Space>
+        <Button theme='solid' type='primary' onClick={addGroup}>
+          {t('添加策略组')}
+        </Button>
+      </div>
+
+      {groups.length === 0 ? (
+        <div style={{ paddingTop: 16 }}>
+          <Text type='tertiary'>{t('暂无自动禁用策略组')}</Text>
+        </div>
+      ) : (
+        <Space vertical style={{ width: '100%', marginTop: 16 }} spacing={12}>
+          {groups.map((group, index) => (
+            <div
+              key={group.id}
+              style={{
+                width: '100%',
+                padding: 12,
+                border: '1px solid var(--semi-color-border)',
+                borderRadius: 8,
+                background: 'var(--semi-color-bg-0)',
+              }}
+            >
+              <Row gutter={12}>
+                <Col xs={24} sm={16}>
+                  <Text size='small'>{t('策略组名称')}</Text>
+                  <Input
+                    value={group.name}
+                    onChange={(name) => updateGroup(index, { name })}
+                    placeholder={t('策略组名称')}
+                    style={{ marginTop: 4 }}
+                  />
+                </Col>
+                <Col xs={24} sm={8}>
+                  <Text size='small'>{t('状态')}</Text>
+                  <div style={{ marginTop: 8 }}>
+                    <Switch
+                      checked={group.enabled}
+                      checkedText={t('开')}
+                      uncheckedText={t('关')}
+                      onChange={(enabled) => updateGroup(index, { enabled })}
+                    />
+                  </div>
+                </Col>
+              </Row>
+              <div style={{ marginTop: 12 }}>
+                <Text size='small'>{t('关键词')}</Text>
+                <TextArea
+                  value={group.keywords.join('\n')}
+                  autosize={{ minRows: 4, maxRows: 10 }}
+                  placeholder={t('一行一个，不区分大小写')}
+                  onChange={(keywords) =>
+                    updateGroup(index, {
+                      keywords: normalizeKeywords(keywords),
+                    })
+                  }
+                  style={{ marginTop: 4 }}
+                />
+                <Text type='tertiary' size='small'>
+                  {t('每行一个关键词，仅对使用该策略组的渠道生效')}
+                </Text>
+              </div>
+              <div style={{ marginTop: 12 }}>
+                <Button
+                  type='danger'
+                  theme='borderless'
+                  onClick={() => removeGroup(index)}
+                >
+                  {t('删除策略组')}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </Space>
+      )}
+    </div>
+  );
 }
 
 export default function SettingsMonitoring(props) {
@@ -109,6 +351,15 @@ export default function SettingsMonitoring(props) {
 
   function onSubmit() {
     const normalizedInputs = normalizeMonitoringInputs(inputs);
+    const policyGroupsResult = normalizePolicyGroupsString(
+      inputs.AutomaticDisablePolicyGroups,
+    );
+    if (!policyGroupsResult.ok) {
+      return showError(
+        `${t('自动禁用策略组配置格式不正确')}: ${policyGroupsResult.error}`,
+      );
+    }
+    normalizedInputs.AutomaticDisablePolicyGroups = policyGroupsResult.value;
     const normalizedBaseline = normalizeMonitoringInputs(inputsRow);
     const updateArray = compareObjects(
       normalizedInputs,
@@ -543,6 +794,15 @@ export default function SettingsMonitoring(props) {
                   autosize={{ minRows: 6, maxRows: 12 }}
                   onChange={(value) =>
                     setInputs({ ...inputs, AutomaticDisableKeywords: value })
+                  }
+                />
+                <AutoDisablePolicyGroupsEditor
+                  value={inputs.AutomaticDisablePolicyGroups}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      AutomaticDisablePolicyGroups: value,
+                    })
                   }
                 />
               </Col>

@@ -16,8 +16,9 @@ const (
 )
 
 type BoundChannel struct {
-	Name string `json:"name"`
-	Type int    `json:"type"`
+	Name              string `json:"name"`
+	VendorProfileCode string `json:"vendor_profile_code,omitempty"`
+	Type              int    `json:"type"`
 }
 
 type Model struct {
@@ -115,14 +116,16 @@ func GetBoundChannelsByModelsMap(modelNames []string) (map[string][]BoundChannel
 		return result, nil
 	}
 	type row struct {
-		Model string
-		Name  string
-		Type  int
+		Model             string
+		Name              string
+		VendorProfileCode string
+		Type              int
 	}
 	var rows []row
 	err := DB.Table("channels").
-		Select("abilities.model as model, channels.name as name, channels.type as type").
+		Select("abilities.model AS model, channels.name AS name, COALESCE(vendor_profiles.code, '') AS vendor_profile_code, channels.type AS type").
 		Joins("JOIN abilities ON abilities.channel_id = channels.id").
+		Joins("LEFT JOIN vendor_profiles ON vendor_profiles.id = channels.vendor_profile_id AND vendor_profiles.deleted_at IS NULL").
 		Where("abilities.model IN ? AND abilities.enabled = ?", modelNames, true).
 		Distinct().
 		Scan(&rows).Error
@@ -130,7 +133,7 @@ func GetBoundChannelsByModelsMap(modelNames []string) (map[string][]BoundChannel
 		return nil, err
 	}
 	for _, r := range rows {
-		result[r.Model] = append(result[r.Model], BoundChannel{Name: r.Name, Type: r.Type})
+		result[r.Model] = append(result[r.Model], BoundChannel{Name: r.Name, VendorProfileCode: r.VendorProfileCode, Type: r.Type})
 	}
 	return result, nil
 }

@@ -48,6 +48,15 @@ const getDefaultLogDateRange = () => {
   return [timestamp2string(now - 3600), timestamp2string(now + 3600)];
 };
 
+const formatLogVendorChannel = (log, t) => {
+  const channelName = log?.channel_name || t('未知渠道');
+  const vendorProfileCode = log?.vendor_profile_code;
+  if (vendorProfileCode) {
+    return `${vendorProfileCode} - ${channelName}`;
+  }
+  return `${log?.channel || '-'} - ${channelName}`;
+};
+
 export const useLogsData = () => {
   const { t } = useTranslation();
   const location = useLocation();
@@ -440,7 +449,7 @@ export const useLogsData = () => {
       ) {
         expandDataLocal.push({
           key: t('渠道信息'),
-          value: `${logs[i].channel} - ${logs[i].channel_name || '[未知]'}`,
+          value: formatLogVendorChannel(logs[i], t),
         });
       }
       if (logs[i].request_id) {

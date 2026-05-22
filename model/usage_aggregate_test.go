@@ -162,6 +162,7 @@ func TestQueryUsageAggregatesLiveUsesLedgerBeforeRollup(t *testing.T) {
 			Timestamp:          3601,
 			NewapiChannelId:    10,
 			ChannelName:        "primary",
+			VendorProfileCode:  "OPENAI-API",
 			ProviderKeyId:      1001,
 			ProviderKeyPreview: "sk-1",
 			TokenId:            2001,
@@ -181,6 +182,7 @@ func TestQueryUsageAggregatesLiveUsesLedgerBeforeRollup(t *testing.T) {
 			Timestamp:          3650,
 			NewapiChannelId:    10,
 			ChannelName:        "primary",
+			VendorProfileCode:  "OPENAI-API",
 			ProviderKeyId:      1001,
 			ProviderKeyPreview: "sk-1",
 			TokenId:            2001,
@@ -228,6 +230,9 @@ func TestQueryUsageAggregatesLiveUsesLedgerBeforeRollup(t *testing.T) {
 	if row.BucketStart != 3600 || row.RequestCount != 2 || row.Quota != 120 || row.CostQuota != 50 || row.InputTokens != 70 || row.OutputTokens != 30 || row.CacheReadTokens != 11 || row.CacheWriteTokens != 15 || row.TotalTokens != 100 {
 		t.Fatalf("unexpected live aggregate row: %#v", row)
 	}
+	if row.VendorProfileCode != "OPENAI-API" {
+		t.Fatalf("expected vendor profile code to be preserved, got %q", row.VendorProfileCode)
+	}
 	if liveSummary.RequestCount != 2 || liveSummary.Quota != 120 || liveSummary.CostQuota != 50 || liveSummary.TotalTokens != 100 {
 		t.Fatalf("unexpected live summary: %#v", liveSummary)
 	}
@@ -239,32 +244,36 @@ func TestUsageAggregateRollupAndExport(t *testing.T) {
 
 	rows := []*UsageLedger{
 		{
-			NewapiLogId:     1,
-			Timestamp:       dayStart + 7201,
-			NewapiChannelId: 7,
-			ProviderKeyId:   101,
-			TokenId:         201,
-			RequestedModel:  "claude-sonnet",
-			ActualModel:     "claude-sonnet",
-			Quota:           10,
-			CostQuota:       4,
-			InputTokens:     6,
-			OutputTokens:    2,
-			TotalTokens:     8,
+			NewapiLogId:       1,
+			Timestamp:         dayStart + 7201,
+			NewapiChannelId:   7,
+			ChannelName:       "primary",
+			VendorProfileCode: "ANTHROPIC-API",
+			ProviderKeyId:     101,
+			TokenId:           201,
+			RequestedModel:    "claude-sonnet",
+			ActualModel:       "claude-sonnet",
+			Quota:             10,
+			CostQuota:         4,
+			InputTokens:       6,
+			OutputTokens:      2,
+			TotalTokens:       8,
 		},
 		{
-			NewapiLogId:     2,
-			Timestamp:       dayStart + 10801,
-			NewapiChannelId: 8,
-			ProviderKeyId:   102,
-			TokenId:         202,
-			RequestedModel:  "grok-4",
-			ActualModel:     "grok-4-fast",
-			Quota:           30,
-			CostQuota:       12,
-			InputTokens:     10,
-			OutputTokens:    5,
-			TotalTokens:     15,
+			NewapiLogId:       2,
+			Timestamp:         dayStart + 10801,
+			NewapiChannelId:   8,
+			ChannelName:       "secondary",
+			VendorProfileCode: "XAI-API",
+			ProviderKeyId:     102,
+			TokenId:           202,
+			RequestedModel:    "grok-4",
+			ActualModel:       "grok-4-fast",
+			Quota:             30,
+			CostQuota:         12,
+			InputTokens:       10,
+			OutputTokens:      5,
+			TotalTokens:       15,
 		},
 	}
 	if err := db.Create(&rows).Error; err != nil {
@@ -296,6 +305,9 @@ func TestUsageAggregateRollupAndExport(t *testing.T) {
 	}
 	if dailyRows[0].ActualModel != "grok-4-fast" || dailyRows[0].Quota != 30 {
 		t.Fatalf("expected quota desc order with grok first, got %#v", dailyRows[0])
+	}
+	if dailyRows[0].VendorProfileCode != "XAI-API" {
+		t.Fatalf("expected daily aggregate vendor profile code to roll up, got %#v", dailyRows[0])
 	}
 	if summary.RequestCount != 2 || summary.Quota != 40 || summary.CostQuota != 16 || summary.TotalTokens != 23 {
 		t.Fatalf("unexpected daily summary: %#v", summary)

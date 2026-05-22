@@ -27,6 +27,7 @@ import { z } from 'zod'
  */
 export interface BoundChannel {
   name: string
+  vendor_profile_code?: string
   type: number
 }
 

@@ -405,6 +405,7 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
         const channels = row.getValue('bound_channels') as Array<{
           id: number
           name: string
+          vendor_profile_code?: string
           type?: number
           status?: number
         }>
@@ -413,14 +414,19 @@ export function useModelsColumns(vendors: Vendor[] = []): ColumnDef<Model>[] {
           return <span className='text-muted-foreground text-xs'>-</span>
         }
 
-        const channelBadges = channels.map((c, idx) => (
-          <StatusBadge
-            key={idx}
-            label={`${c.name} (${c.type})`}
-            autoColor={c.name}
-            size='sm'
-          />
-        ))
+        const channelBadges = channels.map((c, idx) => {
+          const name = c.vendor_profile_code
+            ? `${c.vendor_profile_code} - ${c.name}`
+            : c.name
+          return (
+            <StatusBadge
+              key={idx}
+              label={`${name} (${c.type})`}
+              autoColor={name}
+              size='sm'
+            />
+          )
+        })
 
         return (
           <TooltipProvider>

@@ -46,6 +46,7 @@ import {
   hasAnyCacheTokens,
   parseLogOther,
   isViolationFeeLog,
+  formatLogVendorChannel,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -310,11 +311,9 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             useChannel && useChannel.length > 0
               ? useChannel.join(' → ')
               : undefined
-          const channelDisplay = log.channel_name
-            ? `${log.channel_name} #${log.channel}`
-            : `#${log.channel}`
+          const channelDisplay = formatLogVendorChannel(log)
           const channelIdDisplay = `#${log.channel}`
-          const channelName = sensitiveVisible ? log.channel_name : '••••'
+          const channelName = sensitiveVisible ? channelDisplay : '••••'
 
           return (
             <TooltipProvider>
@@ -354,7 +353,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       </button>
                     )}
                   </div>
-                  {log.channel_name && (
+                  {(log.channel_name || log.vendor_profile_code) && (
                     <span className='text-muted-foreground/70 truncate text-[11px]'>
                       {channelName}
                     </span>
@@ -441,9 +440,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                     {sensitiveVisible ? log.username : '••••'}
                   </TooltipTrigger>
                   {sensitiveVisible && log.username.length > 12 && (
-                    <TooltipContent side='top'>
-                      {log.username}
-                    </TooltipContent>
+                    <TooltipContent side='top'>{log.username}</TooltipContent>
                   )}
                 </Tooltip>
               </TooltipProvider>
@@ -484,11 +481,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         <div className='flex max-w-[200px] flex-col gap-0.5'>
           <TooltipProvider delay={300}>
             <Tooltip>
-              <TooltipTrigger
-                render={
-                  <div className='max-w-full' />
-                }
-              >
+              <TooltipTrigger render={<div className='max-w-full' />}>
                 <StatusBadge
                   label={displayName}
                   icon={KeyRound}

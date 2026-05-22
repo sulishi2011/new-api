@@ -106,6 +106,21 @@ export function parseLogOther(other: string): LogOtherData | null {
 }
 
 /**
+ * Format the admin-facing channel identity for usage logs.
+ * Prefer vendor profile code when the channel is bound to a supplier config.
+ */
+export function formatLogVendorChannel(log: UsageLog): string {
+  const channelName = log.channel_name?.trim()
+  const vendorProfileCode = log.vendor_profile_code?.trim()
+  if (vendorProfileCode) {
+    return channelName
+      ? `${vendorProfileCode} - ${channelName}`
+      : vendorProfileCode
+  }
+  return channelName ? `${log.channel} - ${channelName}` : `#${log.channel}`
+}
+
+/**
  * Get time color based on duration (in seconds)
  */
 export function getTimeColor(

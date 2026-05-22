@@ -5,13 +5,16 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+
+	"gorm.io/gorm"
 )
 
 type ProviderKeyChannelRef struct {
-	Id     int    `json:"id"`
-	Name   string `json:"name"`
-	Status int    `json:"status"`
-	Type   int    `json:"type"`
+	Id                int    `json:"id"`
+	Name              string `json:"name"`
+	VendorProfileCode string `json:"vendor_profile_code,omitempty"`
+	Status            int    `json:"status"`
+	Type              int    `json:"type"`
 }
 
 type ProviderKeyListItem struct {
@@ -42,11 +45,39 @@ type providerKeyLogAggregateRow struct {
 }
 
 type providerKeyChannelRow struct {
-	Id     int    `gorm:"column:id"`
-	Name   string `gorm:"column:name"`
-	Status int    `gorm:"column:status"`
-	Type   int    `gorm:"column:type"`
-	Key    string `gorm:"column:key"`
+	Id                int    `gorm:"column:id"`
+	Name              string `gorm:"column:name"`
+	VendorProfileCode string `gorm:"column:vendor_profile_code"`
+	Status            int    `gorm:"column:status"`
+	Type              int    `gorm:"column:type"`
+	Key               string `gorm:"column:key"`
+}
+
+func providerKeyChannelKeyColumn() string {
+	if commonKeyCol != "" {
+		return "channels." + commonKeyCol
+	}
+	if common.UsingPostgreSQL {
+		return `channels."key"`
+	}
+	return "channels.`key`"
+}
+
+func providerKeyChannelSelect() string {
+	return strings.Join([]string{
+		"channels.id",
+		"channels.name",
+		"channels.status",
+		"channels.type",
+		"COALESCE(vendor_profiles.code, '') AS vendor_profile_code",
+		providerKeyChannelKeyColumn() + " AS key",
+	}, ", ")
+}
+
+func providerKeyChannelQuery() *gorm.DB {
+	return readDB().Model(&Channel{}).
+		Joins("LEFT JOIN vendor_profiles ON vendor_profiles.id = channels.vendor_profile_id AND vendor_profiles.deleted_at IS NULL").
+		Select(providerKeyChannelSelect())
 }
 
 func GetPagedProviderKeys(keyword string, startIdx int, pageSize int) ([]*ProviderKeyListItem, int64, error) {
@@ -131,19 +162,8 @@ func GetPagedProviderKeys(keyword string, startIdx int, pageSize int) ([]*Provid
 }
 
 func syncProviderKeysFromChannels() error {
-	keyColumn := commonKeyCol
-	if keyColumn == "" {
-		if common.UsingPostgreSQL {
-			keyColumn = `"key"`
-		} else {
-			keyColumn = "`key`"
-		}
-	}
-
 	var channels []providerKeyChannelRow
-	if err := readDB().Model(&Channel{}).
-		Select("id, name, status, type, " + keyColumn + " as key").
-		Find(&channels).Error; err != nil {
+	if err := providerKeyChannelQuery().Find(&channels).Error; err != nil {
 		return err
 	}
 
@@ -208,19 +228,8 @@ func getProviderKeyChannels(fingerprintSet map[string]struct{}) (map[string][]Pr
 		return channelsByFingerprint, currentKeyByFingerprint, nil
 	}
 
-	keyColumn := commonKeyCol
-	if keyColumn == "" {
-		if common.UsingPostgreSQL {
-			keyColumn = `"key"`
-		} else {
-			keyColumn = "`key`"
-		}
-	}
-
 	var channels []providerKeyChannelRow
-	if err := readDB().Model(&Channel{}).
-		Select("id, name, status, type, " + keyColumn + " as key").
-		Find(&channels).Error; err != nil {
+	if err := providerKeyChannelQuery().Find(&channels).Error; err != nil {
 		return nil, nil, err
 	}
 
@@ -245,10 +254,11 @@ func getProviderKeyChannels(fingerprintSet map[string]struct{}) (map[string][]Pr
 			}
 
 			channelsByFingerprint[fingerprint] = append(channelsByFingerprint[fingerprint], ProviderKeyChannelRef{
-				Id:     channel.Id,
-				Name:   channel.Name,
-				Status: channel.Status,
-				Type:   channel.Type,
+				Id:                channel.Id,
+				Name:              channel.Name,
+				VendorProfileCode: channel.VendorProfileCode,
+				Status:            channel.Status,
+				Type:              channel.Type,
 			})
 			if currentKeyByFingerprint[fingerprint] == "" {
 				currentKeyByFingerprint[fingerprint] = strings.TrimSpace(rawKey)

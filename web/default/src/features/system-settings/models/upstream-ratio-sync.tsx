@@ -88,6 +88,13 @@ function getDefaultEndpointForChannel(channel: UpstreamChannel): string {
   return DEFAULT_ENDPOINT
 }
 
+function formatVendorChannelName(channel: UpstreamChannel): string {
+  const code = channel.vendor_profile_code?.trim()
+  const name = channel.name?.trim()
+  if (code && name) return `${code} - ${name}`
+  return code || name || '-'
+}
+
 function getBillingCategory(ratioType: string): 'price' | 'ratio' | 'tiered' {
   if (ratioType === 'model_price') return 'price'
   if (ratioType === 'billing_mode' || ratioType === 'billing_expr')
@@ -259,7 +266,7 @@ export function UpstreamRatioSync({ modelRatios }: UpstreamRatioSyncProps) {
 
     const upstreams: UpstreamConfig[] = selectedChannels.map((ch) => ({
       id: ch.id,
-      name: ch.name,
+      name: formatVendorChannelName(ch),
       base_url: ch.base_url,
       endpoint: channelEndpoints[ch.id] || DEFAULT_ENDPOINT,
     }))

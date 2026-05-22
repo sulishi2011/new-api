@@ -283,6 +283,7 @@ export type OperationsSettings = {
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
+  AutomaticDisablePolicyGroups: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
@@ -344,6 +345,7 @@ export type SecuritySettings = {
 export type UpstreamChannel = {
   id: number
   name: string
+  vendor_profile_code?: string
   base_url: string
   status: number
   type?: number

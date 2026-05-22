@@ -414,6 +414,13 @@ const buildChannelSettingPayload = (values, fallbackValues = {}) => {
     cost_ratio: numberValue('cost_ratio') ?? 1,
   };
 
+  const autoDisablePolicyGroup = stringValue(
+    'auto_disable_policy_group',
+  ).trim();
+  if (autoDisablePolicyGroup) {
+    payload.auto_disable_policy_group = autoDisablePolicyGroup;
+  }
+
   [
     'request_timeout_enabled',
     'response_header_timeout_enabled',
@@ -445,10 +452,24 @@ const EditChannelModal = (props) => {
   const { t } = useTranslation();
   const channelId = props.editingChannel.id;
   const vendorProfiles = props.vendorProfiles || [];
+  const autoDisablePolicyGroups = props.autoDisablePolicyGroups || [];
   const isEdit = channelId !== undefined;
   const defaultTimeoutSettings = useMemo(
     () => getDefaultChannelTimeoutSettings(props.channelTimeoutDefaults),
     [props.channelTimeoutDefaults],
+  );
+  const autoDisablePolicyGroupOptions = useMemo(
+    () => [
+      {
+        label: t('默认策略'),
+        value: '',
+      },
+      ...autoDisablePolicyGroups.map((group) => ({
+        label: group.enabled ? group.name : `${group.name} (${t('已禁用')})`,
+        value: group.id,
+      })),
+    ],
+    [autoDisablePolicyGroups, t],
   );
   const [loading, setLoading] = useState(isEdit);
   const isMobile = useIsMobile();
@@ -482,6 +503,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    auto_disable_policy_group: '',
     cost_ratio: 1,
     ...defaultTimeoutSettings,
     settings: '',
@@ -1145,6 +1167,8 @@ const EditChannelModal = (props) => {
           data.system_prompt = parsedSettings.system_prompt || '';
           data.system_prompt_override =
             parsedSettings.system_prompt_override || false;
+          data.auto_disable_policy_group =
+            parsedSettings.auto_disable_policy_group || '';
           data.cost_ratio =
             typeof parsedSettings.cost_ratio === 'number'
               ? parsedSettings.cost_ratio
@@ -1191,6 +1215,7 @@ const EditChannelModal = (props) => {
           data.pass_through_body_enabled = false;
           data.system_prompt = '';
           data.system_prompt_override = false;
+          data.auto_disable_policy_group = '';
           data.cost_ratio = 1;
           data.request_timeout_enabled =
             defaultTimeoutSettings.request_timeout_enabled;
@@ -1216,6 +1241,7 @@ const EditChannelModal = (props) => {
         data.pass_through_body_enabled = false;
         data.system_prompt = '';
         data.system_prompt_override = false;
+        data.auto_disable_policy_group = '';
         data.cost_ratio = 1;
         data.request_timeout_enabled =
           defaultTimeoutSettings.request_timeout_enabled;
@@ -2242,6 +2268,7 @@ const EditChannelModal = (props) => {
     delete localInputs.pass_through_body_enabled;
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
+    delete localInputs.auto_disable_policy_group;
     delete localInputs.cost_ratio;
     delete localInputs.request_timeout_enabled;
     delete localInputs.request_timeout_seconds;
@@ -4697,6 +4724,20 @@ const EditChannelModal = (props) => {
                           '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
                         )}
                         initValue={autoBan}
+                      />
+
+                      <Form.Select
+                        field='auto_disable_policy_group'
+                        label={t('自动禁用策略组')}
+                        placeholder={t('请选择自动禁用策略组')}
+                        optionList={autoDisablePolicyGroupOptions}
+                        style={{ width: '100%' }}
+                        onChange={(value) =>
+                          handleInputChange('auto_disable_policy_group', value)
+                        }
+                        extraText={t(
+                          '设置后该渠道会使用所选策略组的关键词，未设置时使用默认自动禁用关键词',
+                        )}
                       />
 
                       {/* Test Model - Core Config */}

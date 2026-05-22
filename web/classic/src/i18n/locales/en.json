@@ -3844,6 +3844,20 @@
     "确定要归档此渠道？": "Archive this channel?",
     "归档渠道不会参与调度，启用后会自动移出归档。": "Archived channels are not routed; enabling one removes it from archive automatically.",
     "确认启用归档渠道？": "Enable archived channel?",
-    "启用后该渠道会自动移出归档分类，并重新参与调度。": "After enabling, this channel leaves archive automatically and is routed again."
+    "启用后该渠道会自动移出归档分类，并重新参与调度。": "After enabling, this channel leaves archive automatically and is routed again.",
+    "一行一个关键词，仅对使用该策略组的渠道生效": "One keyword per line, only for channels using this policy group",
+    "删除策略组": "Delete policy group",
+    "已禁用的策略组不会生效，绑定该组的渠道会回退到默认关键词": "Disabled policy groups are not applied; bound channels fall back to the default keywords",
+    "新策略组": "New policy group",
+    "暂无自动禁用策略组": "No auto-disable policy groups",
+    "每行一个关键词，仅对使用该策略组的渠道生效": "One keyword per line, only for channels using this policy group",
+    "添加策略组": "Add policy group",
+    "策略组名称": "Policy group name",
+    "策略组用于让指定渠道使用专用失败关键词，不影响默认关键词": "Policy groups let selected channels use dedicated failure keywords without changing the default keywords",
+    "自动禁用策略组": "Auto-disable policy group",
+    "自动禁用策略组配置格式不正确": "Auto-disable policy group configuration is invalid",
+    "设置后该渠道会使用所选策略组的关键词，未设置时使用默认自动禁用关键词": "When set, this channel uses the selected policy group keywords; otherwise it uses the default auto-disable keywords",
+    "请选择自动禁用策略组": "Select an auto-disable policy group",
+    "默认策略": "Default policy"
   }
 }

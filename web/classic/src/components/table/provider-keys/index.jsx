@@ -31,6 +31,13 @@ import { useIsMobile } from '../../../hooks/common/useIsMobile';
 
 const { Text } = Typography;
 
+const formatVendorChannelName = (channel, t) => {
+  const code = String(channel?.vendor_profile_code || '').trim();
+  const name = String(channel?.name || '').trim();
+  if (code && name) return `${code} - ${name}`;
+  return code || name || t('未命名');
+};
+
 const ProviderKeysPage = () => {
   const providerKeysData = useProviderKeysData();
   const isMobile = useIsMobile();
@@ -87,7 +94,8 @@ const ProviderKeysPage = () => {
                 color='blue'
                 shape='circle'
               >
-                #{channel.id} {channel.name || providerKeysData.t('未命名')}
+                #{channel.id}{' '}
+                {formatVendorChannelName(channel, providerKeysData.t)}
               </Tag>
             ))}
             {(record.channels || []).length > 4 ? (

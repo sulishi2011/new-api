@@ -23,6 +23,7 @@ type UsageAggregateHourly struct {
 	BucketStart        int64  `json:"bucket_start" gorm:"bigint;uniqueIndex:idx_usage_aggregate_hourly_dim,priority:1;index"`
 	ChannelId          int    `json:"channel_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_hourly_dim,priority:2;index"`
 	ChannelName        string `json:"channel_name" gorm:"type:varchar(191);default:''"`
+	VendorProfileCode  string `json:"vendor_profile_code" gorm:"type:varchar(64);default:''"`
 	ProviderKeyId      int    `json:"provider_key_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_hourly_dim,priority:3;index"`
 	ProviderKeyPreview string `json:"provider_key_preview" gorm:"type:varchar(255);default:''"`
 	TokenId            int    `json:"token_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_hourly_dim,priority:4;index"`
@@ -50,6 +51,7 @@ type UsageAggregateDaily struct {
 	BucketStart        int64  `json:"bucket_start" gorm:"bigint;uniqueIndex:idx_usage_aggregate_daily_dim,priority:1;index"`
 	ChannelId          int    `json:"channel_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_daily_dim,priority:2;index"`
 	ChannelName        string `json:"channel_name" gorm:"type:varchar(191);default:''"`
+	VendorProfileCode  string `json:"vendor_profile_code" gorm:"type:varchar(64);default:''"`
 	ProviderKeyId      int    `json:"provider_key_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_daily_dim,priority:3;index"`
 	ProviderKeyPreview string `json:"provider_key_preview" gorm:"type:varchar(255);default:''"`
 	TokenId            int    `json:"token_id" gorm:"default:0;uniqueIndex:idx_usage_aggregate_daily_dim,priority:4;index"`
@@ -119,6 +121,7 @@ type UsageAggregateRow struct {
 	BucketStart        int64  `json:"bucket_start" gorm:"column:bucket_start"`
 	ChannelId          int    `json:"channel_id" gorm:"column:channel_id"`
 	ChannelName        string `json:"channel_name" gorm:"column:channel_name"`
+	VendorProfileCode  string `json:"vendor_profile_code" gorm:"column:vendor_profile_code"`
 	ProviderKeyId      int    `json:"provider_key_id" gorm:"column:provider_key_id"`
 	ProviderKeyPreview string `json:"provider_key_preview" gorm:"column:provider_key_preview"`
 	TokenId            int    `json:"token_id" gorm:"column:token_id"`
@@ -181,6 +184,7 @@ func aggregateSelectFields(bucketExpr string) string {
 		bucketExpr + " AS bucket_start",
 		"newapi_channel_id AS channel_id",
 		"COALESCE(MAX(channel_name), '') AS channel_name",
+		"COALESCE(MAX(vendor_profile_code), '') AS vendor_profile_code",
 		"provider_key_id",
 		"COALESCE(MAX(provider_key_preview), '') AS provider_key_preview",
 		"token_id",
@@ -213,6 +217,7 @@ func hourlyToDailySelectFields() string {
 		usageAggregateBucketParamExpression() + " AS bucket_start",
 		"channel_id",
 		"COALESCE(MAX(channel_name), '') AS channel_name",
+		"COALESCE(MAX(vendor_profile_code), '') AS vendor_profile_code",
 		"provider_key_id",
 		"COALESCE(MAX(provider_key_preview), '') AS provider_key_preview",
 		"token_id",
@@ -245,6 +250,7 @@ func rowsToHourlyAggregates(rows []UsageAggregateRow, now int64) []UsageAggregat
 			BucketStart:        row.BucketStart,
 			ChannelId:          row.ChannelId,
 			ChannelName:        row.ChannelName,
+			VendorProfileCode:  row.VendorProfileCode,
 			ProviderKeyId:      row.ProviderKeyId,
 			ProviderKeyPreview: row.ProviderKeyPreview,
 			TokenId:            row.TokenId,
@@ -273,6 +279,7 @@ func rowsToDailyAggregates(rows []UsageAggregateRow, now int64) []UsageAggregate
 			BucketStart:        row.BucketStart,
 			ChannelId:          row.ChannelId,
 			ChannelName:        row.ChannelName,
+			VendorProfileCode:  row.VendorProfileCode,
 			ProviderKeyId:      row.ProviderKeyId,
 			ProviderKeyPreview: row.ProviderKeyPreview,
 			TokenId:            row.TokenId,

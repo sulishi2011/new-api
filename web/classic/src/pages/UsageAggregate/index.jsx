@@ -129,6 +129,13 @@ const parseNumericFilter = (value) => {
   return Number.isNaN(parsed) ? '' : String(parsed);
 };
 
+const formatVendorChannelName = (record) => {
+  const code = String(record?.vendor_profile_code || '').trim();
+  const name = String(record?.channel_name || '').trim();
+  if (code && name) return `${code} - ${name}`;
+  return code || name || '-';
+};
+
 const getCsvFilename = (headers, fallback) => {
   const disposition = headers?.['content-disposition'] || '';
   const match = disposition.match(/filename="?([^"]+)"?/i);
@@ -415,7 +422,7 @@ const UsageAggregate = () => {
           <Tag color='blue' shape='circle'>
             #{record.channel_id || 0}
           </Tag>
-          <Text>{record.channel_name || '-'}</Text>
+          <Text>{formatVendorChannelName(record)}</Text>
         </Space>
       ),
     },

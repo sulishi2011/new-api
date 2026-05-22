@@ -85,6 +85,13 @@ function isOfficialChannel(channel: UpstreamChannel): boolean {
   )
 }
 
+function formatVendorChannelName(channel: UpstreamChannel): string {
+  const code = channel.vendor_profile_code?.trim()
+  const name = channel.name?.trim()
+  if (code && name) return `${code} - ${name}`
+  return code || name || '-'
+}
+
 export function ChannelSelectorDialog({
   open,
   onOpenChange,
@@ -160,8 +167,8 @@ export function ChannelSelectorDialog({
         accessorKey: 'name',
         header: t('Name'),
         cell: ({ row }) => {
-          const name = row.getValue('name') as string
           const channel = row.original
+          const name = formatVendorChannelName(channel)
           const isOfficial = isOfficialChannel(channel)
 
           return (
@@ -287,7 +294,7 @@ export function ChannelSelectorDialog({
     const searchLower = search.toLowerCase()
     return channels.filter(
       (ch) =>
-        ch.name.toLowerCase().includes(searchLower) ||
+        formatVendorChannelName(ch).toLowerCase().includes(searchLower) ||
         ch.base_url.toLowerCase().includes(searchLower)
     )
   }, [channels, search])

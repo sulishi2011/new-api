@@ -919,7 +919,7 @@ func testAllChannels(notify bool) error {
 			newAPIError := result.newAPIError
 			// request error disables the channel
 			if newAPIError != nil {
-				shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
+				shouldBanChannel = service.ShouldDisableChannel(result.newAPIError, channel.GetAutoDisablePolicyGroup())
 			}
 
 			// 当错误检查通过，才检查响应时间
@@ -933,12 +933,12 @@ func testAllChannels(notify bool) error {
 
 			// disable channel
 			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-				processChannelError(result.context, nil, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode()), newAPIError)
+				processChannelError(result.context, nil, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()), newAPIError)
 			}
 
 			// enable channel
 			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
-				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
+				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name, channel.GetVendorProfileCode())
 			}
 
 			channel.UpdateResponseTime(milliseconds)

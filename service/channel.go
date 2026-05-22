@@ -17,33 +17,43 @@ func formatNotifyType(channelId int, status int) string {
 
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
-	common.SysLog(fmt.Sprintf("通道「%s」（#%d）发生错误，准备禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason))
+	channelLabel := formatChannelLabel(channelError)
+	common.SysLog(fmt.Sprintf("%s 发生错误，准备禁用，原因：%s", channelLabel, reason))
 
 	// 检查是否启用自动禁用功能
 	if !channelError.AutoBan {
-		common.SysLog(fmt.Sprintf("通道「%s」（#%d）未启用自动禁用功能，跳过禁用操作", channelError.ChannelName, channelError.ChannelId))
+		common.SysLog(fmt.Sprintf("%s 未启用自动禁用功能，跳过禁用操作", channelLabel))
 		return
 	}
 
 	success := model.UpdateChannelStatus(channelError.ChannelId, channelError.UsingKey, common.ChannelStatusAutoDisabled, reason)
 	if success {
-		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
-		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
+		subject := fmt.Sprintf("%s 已被禁用", channelLabel)
+		content := fmt.Sprintf("%s 已被禁用，原因：%s", channelLabel, reason)
 		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
 		NotifyChannelDisabledWebhook(channelError, reason)
 	}
 }
 
-func EnableChannel(channelId int, usingKey string, channelName string) {
+func EnableChannel(channelId int, usingKey string, channelName string, vendorProfileCode ...string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
-		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
-		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
+		code := ""
+		if len(vendorProfileCode) > 0 {
+			code = vendorProfileCode[0]
+		}
+		channelLabel := formatChannelLabel(types.ChannelError{
+			ChannelId:         channelId,
+			ChannelName:       channelName,
+			VendorProfileCode: code,
+		})
+		subject := fmt.Sprintf("%s 已被启用", channelLabel)
+		content := fmt.Sprintf("%s 已被启用", channelLabel)
 		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
 	}
 }
 
-func ShouldDisableChannel(err *types.NewAPIError) bool {
+func ShouldDisableChannel(err *types.NewAPIError, policyGroupIDs ...string) bool {
 	if !common.AutomaticDisableChannelEnabled {
 		return false
 	}
@@ -60,8 +70,12 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 		return true
 	}
 
+	policyGroupID := ""
+	if len(policyGroupIDs) > 0 {
+		policyGroupID = policyGroupIDs[0]
+	}
 	lowerMessage := strings.ToLower(err.Error())
-	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
+	search, _ := AcSearch(lowerMessage, operation_setting.GetAutomaticDisablePolicyKeywords(policyGroupID), true)
 	return search
 }
 

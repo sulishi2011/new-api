@@ -92,6 +92,18 @@ func (channel *Channel) GetVendorProfileCode() string {
 	return strings.TrimSpace(channel.VendorProfile.Code)
 }
 
+func FormatVendorChannelName(vendorProfileCode string, channelName string) string {
+	channelName = strings.TrimSpace(channelName)
+	vendorProfileCode = strings.TrimSpace(vendorProfileCode)
+	if vendorProfileCode != "" && channelName != "" {
+		return vendorProfileCode + " - " + channelName
+	}
+	if vendorProfileCode != "" {
+		return vendorProfileCode
+	}
+	return channelName
+}
+
 func ChannelVendorProfileIdDBValue(vendorProfileId *int) interface{} {
 	if normalized := NormalizeChannelVendorProfileId(vendorProfileId); normalized != nil {
 		return *normalized
@@ -384,6 +396,13 @@ func (channel *Channel) GetAutoBan() bool {
 		return false
 	}
 	return *channel.AutoBan == 1
+}
+
+func (channel *Channel) GetAutoDisablePolicyGroup() string {
+	if channel == nil {
+		return ""
+	}
+	return strings.TrimSpace(channel.GetSetting().AutoDisablePolicyGroup)
 }
 
 func (channel *Channel) Save() error {

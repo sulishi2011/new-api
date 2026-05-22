@@ -52,6 +52,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { parseAutoDisablePolicyGroups } from '@/lib/auto-disable-policy-groups'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
@@ -105,6 +106,7 @@ import {
   SecureVerificationDialog,
   useSecureVerification,
 } from '@/features/auth/secure-verification'
+import { getSystemOptions } from '@/features/system-settings/api'
 import {
   createChannel,
   fetchModels,
@@ -217,6 +219,8 @@ const MODEL_MAPPING_PREVIEW_FALLBACK: Array<{
 
 const ADVANCED_SETTINGS_EXPANDED_KEY = 'channel-advanced-settings-expanded'
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
+const DEFAULT_AUTO_DISABLE_POLICY_GROUP_VALUE =
+  '__default_auto_disable_policy_group__'
 
 function readAdvancedSettingsPreference(): boolean {
   if (typeof window === 'undefined') return false
@@ -341,6 +345,12 @@ export function ChannelMutateDrawer({
     queryFn: getGroups,
   })
 
+  const { data: systemOptionsData } = useQuery({
+    queryKey: ['system_options', 'auto_disable_policy_groups'],
+    queryFn: getSystemOptions,
+    enabled: open,
+  })
+
   // Fetch all available models
   const { data: allModelsData } = useQuery({
     queryKey: ['channel_models'],
@@ -454,6 +464,13 @@ export function ChannelMutateDrawer({
       label: group,
     }))
   }, [groupsData, currentGroups])
+
+  const autoDisablePolicyGroups = useMemo(() => {
+    const value = systemOptionsData?.data?.find(
+      (option) => option.key === 'AutomaticDisablePolicyGroups'
+    )?.value
+    return parseAutoDisablePolicyGroups(value)
+  }, [systemOptionsData])
 
   // Parse current models as array
   const currentModelsArray = useMemo(
@@ -2554,6 +2571,72 @@ export function ChannelMutateDrawer({
                           </FormItem>
                         )}
                       />
+
+                      <FormField
+                        control={form.control}
+                        name='auto_disable_policy_group'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>
+                              {t('Auto-disable policy group')}
+                            </FormLabel>
+                            <Select
+                              value={
+                                field.value ||
+                                DEFAULT_AUTO_DISABLE_POLICY_GROUP_VALUE
+                              }
+                              onValueChange={(value) =>
+                                field.onChange(
+                                  value ===
+                                    DEFAULT_AUTO_DISABLE_POLICY_GROUP_VALUE
+                                    ? ''
+                                    : value
+                                )
+                              }
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue
+                                    placeholder={t('Select a policy group')}
+                                  />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem
+                                    value={
+                                      DEFAULT_AUTO_DISABLE_POLICY_GROUP_VALUE
+                                    }
+                                  >
+                                    {t('Default policy')}
+                                  </SelectItem>
+                                  {autoDisablePolicyGroups.map((group) => (
+                                    <SelectItem key={group.id} value={group.id}>
+                                      {group.enabled
+                                        ? group.name
+                                        : `${group.name} (${t('Disabled')})`}
+                                    </SelectItem>
+                                  ))}
+                                  {field.value &&
+                                    !autoDisablePolicyGroups.some(
+                                      (group) => group.id === field.value
+                                    ) && (
+                                      <SelectItem value={field.value}>
+                                        {field.value}
+                                      </SelectItem>
+                                    )}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              {t(
+                                "Channels using a policy group match that group's keywords instead of the default keyword list."
+                              )}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
                     </div>
 
                     <div className='space-y-4 border-t pt-4'>
@@ -3381,7 +3464,9 @@ export function ChannelMutateDrawer({
         redirectSourceModels={redirectModelKeyList}
         customFetcher={!isEditing ? createModeFetcher : undefined}
         existingModelsOverride={
-          !isEditing ? parseModelsString(form.getValues('models') || '') : undefined
+          !isEditing
+            ? parseModelsString(form.getValues('models') || '')
+            : undefined
         }
       />
 

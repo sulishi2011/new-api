@@ -43,6 +43,7 @@ type ChannelSettings struct {
 	PassThroughBodyEnabled             bool     `json:"pass_through_body_enabled,omitempty"`
 	SystemPrompt                       string   `json:"system_prompt,omitempty"`
 	SystemPromptOverride               bool     `json:"system_prompt_override,omitempty"`
+	AutoDisablePolicyGroup             string   `json:"auto_disable_policy_group,omitempty"`
 	CostRatio                          *float64 `json:"cost_ratio,omitempty"`
 	RequestTimeoutEnabled              *bool    `json:"request_timeout_enabled,omitempty"`
 	RequestTimeoutSeconds              *int     `json:"request_timeout_seconds,omitempty"`

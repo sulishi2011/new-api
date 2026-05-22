@@ -39,6 +39,7 @@ export interface UsageAggregateRow {
   bucket_start: number
   channel_id: number
   channel_name: string
+  vendor_profile_code?: string
   provider_key_id: number
   provider_key_preview: string
   token_id: number

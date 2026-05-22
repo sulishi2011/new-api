@@ -58,6 +58,7 @@ const ChannelsPage = () => {
           handleClose={channelsData.closeEdit}
           editingChannel={channelsData.editingChannel}
           channelTimeoutDefaults={channelsData.channelTimeoutDefaults}
+          autoDisablePolicyGroups={channelsData.autoDisablePolicyGroups}
           vendorProfiles={channelsData.vendorProfiles}
         />
       ) : null}

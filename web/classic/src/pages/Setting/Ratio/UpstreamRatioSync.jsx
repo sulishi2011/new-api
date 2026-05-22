@@ -60,6 +60,13 @@ const MODELS_DEV_PRESET_NAME = 'models.dev 价格预设';
 const MODELS_DEV_PRESET_BASE_URL = 'https://models.dev';
 const MODELS_DEV_PRESET_ENDPOINT = 'https://models.dev/api.json';
 
+const formatVendorChannelName = (channel) => {
+  const code = String(channel?.vendor_profile_code || '').trim();
+  const name = String(channel?.name || '').trim();
+  if (code && name) return `${code} - ${name}`;
+  return code || name || '-';
+};
+
 function ConflictConfirmModal({ t, visible, items, loading, onOk, onCancel }) {
   const isMobile = useIsMobile();
   const columns = [
@@ -150,7 +157,7 @@ export default function UpstreamRatioSync(props) {
 
         const transferData = channels.map((channel) => ({
           key: channel.id,
-          label: channel.name,
+          label: formatVendorChannelName(channel),
           value: channel.id,
           disabled: false,
           _originalData: channel,

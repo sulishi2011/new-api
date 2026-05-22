@@ -56,6 +56,15 @@ const colors = [
   'yellow',
 ];
 
+function formatLogVendorChannel(record, t) {
+  const channelName = record?.channel_name || t('未知渠道');
+  const vendorProfileCode = record?.vendor_profile_code;
+  if (vendorProfileCode) {
+    return `${vendorProfileCode} - ${channelName}`;
+  }
+  return `${record?.channel || '-'} - ${channelName}`;
+}
+
 function formatRatio(ratio) {
   if (ratio === undefined || ratio === null) {
     return '-';
@@ -514,6 +523,7 @@ export const getLogsColumns = ({
             showMarker = true;
           }
         }
+        const channelDisplay = formatLogVendorChannel(record, t);
 
         return isAdminUser &&
           (record.type === 0 ||
@@ -522,7 +532,7 @@ export const getLogsColumns = ({
             record.type === 6) ? (
           <Space>
             <span style={{ position: 'relative', display: 'inline-block' }}>
-              <Tooltip content={record.channel_name || t('未知渠道')}>
+              <Tooltip content={channelDisplay}>
                 <span>
                   <Tag
                     color={colors[parseInt(text) % colors.length]}

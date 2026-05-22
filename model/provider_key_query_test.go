@@ -9,11 +9,22 @@ import (
 func TestGetPagedProviderKeysIncludesUsageAndChannels(t *testing.T) {
 	setupProviderKeyTestDB(t)
 
+	profile := VendorProfile{
+		Code:         "OPENAI-API",
+		VendorCode:   "openai",
+		VendorName:   "OpenAI",
+		PlatformType: "api",
+	}
+	if err := profile.Insert(); err != nil {
+		t.Fatalf("failed to create vendor profile: %v", err)
+	}
+
 	channelAlpha := &Channel{
-		Name:   "alpha",
-		Key:    "shared-upstream-key",
-		Group:  "default",
-		Status: common.ChannelStatusEnabled,
+		Name:            "alpha",
+		Key:             "shared-upstream-key",
+		Group:           "default",
+		Status:          common.ChannelStatusEnabled,
+		VendorProfileId: &profile.Id,
 	}
 	if err := DB.Create(channelAlpha).Error; err != nil {
 		t.Fatalf("failed to create alpha channel: %v", err)
@@ -91,6 +102,16 @@ func TestGetPagedProviderKeysIncludesUsageAndChannels(t *testing.T) {
 	}
 	if len(item.Channels) != 2 {
 		t.Fatalf("expected 2 linked channels, got %d", len(item.Channels))
+	}
+	foundProfileCode := false
+	for _, channel := range item.Channels {
+		if channel.Name == "alpha" && channel.VendorProfileCode == "OPENAI-API" {
+			foundProfileCode = true
+			break
+		}
+	}
+	if !foundProfileCode {
+		t.Fatalf("expected alpha channel to include vendor profile code, got %#v", item.Channels)
 	}
 	if item.RequestCount != 2 {
 		t.Fatalf("expected request count 2, got %d", item.RequestCount)

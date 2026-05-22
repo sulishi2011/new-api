@@ -198,6 +198,13 @@ function EntityLabel(props: {
   )
 }
 
+function formatVendorChannelName(row: UsageAggregateRow): string {
+  const code = row.vendor_profile_code?.trim()
+  const name = row.channel_name?.trim()
+  if (code && name) return `${code} - ${name}`
+  return code || name || ''
+}
+
 function useUsageSummaryColumns(
   granularity: UsageAggregateGranularity
 ): ColumnDef<UsageAggregateRow>[] {
@@ -211,7 +218,7 @@ function useUsageSummaryColumns(
           <DataTableColumnHeader column={column} title={t('Bucket')} />
         ),
         cell: ({ row }) => (
-          <span className='whitespace-nowrap font-mono text-xs'>
+          <span className='font-mono text-xs whitespace-nowrap'>
             {formatUtcBucketRange(row.original.bucket_start, granularity)}
           </span>
         ),
@@ -242,7 +249,7 @@ function useUsageSummaryColumns(
         cell: ({ row }) => (
           <EntityLabel
             id={row.original.channel_id}
-            name={row.original.channel_name}
+            name={formatVendorChannelName(row.original)}
           />
         ),
         meta: { label: t('Channel') },
