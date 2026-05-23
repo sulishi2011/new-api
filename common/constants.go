@@ -87,6 +87,7 @@ var TraceSuccessSampleRate = 0
 var TraceUploadAsync = true
 var TraceUploadSyncForError = true
 var TraceUploadBatchEnabled = false
+var TraceUploadBatchWorkers = 1
 var TraceUploadQueueSize = 1000
 var TraceUploadBatchSize = 100
 var TraceUploadBatchFlushIntervalSeconds = 2

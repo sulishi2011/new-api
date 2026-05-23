@@ -158,6 +158,15 @@ func InitEnv() {
 	TraceUploadAsync = GetEnvOrDefaultBool("TRACE_UPLOAD_ASYNC", TraceUploadAsync)
 	TraceUploadSyncForError = GetEnvOrDefaultBool("TRACE_UPLOAD_SYNC_FOR_ERROR", TraceUploadSyncForError)
 	TraceUploadBatchEnabled = GetEnvOrDefaultBool("TRACE_UPLOAD_BATCH_ENABLED", TraceUploadBatchEnabled)
+	if value, ok := os.LookupEnv("TRACE_UPLOAD_BATCH_WORKERS"); ok && strings.TrimSpace(value) != "" {
+		TraceUploadBatchWorkers = GetEnvOrDefault("TRACE_UPLOAD_BATCH_WORKERS", TraceUploadBatchWorkers)
+	} else {
+		TraceUploadBatchWorkers = GetEnvOrDefault("TRACE_UPLOAD_WORKERS", TraceUploadBatchWorkers)
+	}
+	if TraceUploadBatchWorkers < 1 {
+		SysError("TRACE_UPLOAD_BATCH_WORKERS must be positive, using default value: 1")
+		TraceUploadBatchWorkers = 1
+	}
 	TraceUploadQueueSize = GetEnvOrDefault("TRACE_UPLOAD_QUEUE_SIZE", TraceUploadQueueSize)
 	if TraceUploadQueueSize < 1 {
 		SysError("TRACE_UPLOAD_QUEUE_SIZE must be positive, using default value: 1000")

@@ -216,12 +216,21 @@ func getLogTraceBatchQueue() chan logTraceBatchItem {
 			size = 1000
 		}
 		logTraceBatchQueue = make(chan logTraceBatchItem, size)
-		gopool.Go(runLogTraceBatchWorker)
+		workers := common.TraceUploadBatchWorkers
+		if workers <= 0 {
+			workers = 1
+		}
+		for i := 0; i < workers; i++ {
+			workerId := i + 1
+			gopool.Go(func() {
+				runLogTraceBatchWorker(workerId)
+			})
+		}
 	})
 	return logTraceBatchQueue
 }
 
-func runLogTraceBatchWorker() {
+func runLogTraceBatchWorker(workerId int) {
 	batchSize := common.TraceUploadBatchSize
 	if batchSize <= 0 {
 		batchSize = 100
@@ -244,7 +253,7 @@ func runLogTraceBatchWorker() {
 		uploadCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := persistLogTraceBatchSync(uploadCtx, items); err != nil {
-			common.SysLog(fmt.Sprintf("failed to persist log trace batch: count=%d, error=%v", len(items), err))
+			common.SysLog(fmt.Sprintf("failed to persist log trace batch: worker=%d, count=%d, error=%v", workerId, len(items), err))
 		}
 	}
 
