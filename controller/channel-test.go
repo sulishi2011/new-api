@@ -937,7 +937,7 @@ func testAllChannels(notify bool) error {
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status, channel.GetSetting()) {
 				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name, channel.GetVendorProfileCode())
 			}
 

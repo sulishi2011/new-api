@@ -421,6 +421,13 @@ const buildChannelSettingPayload = (values, fallbackValues = {}) => {
     payload.auto_disable_policy_group = autoDisablePolicyGroup;
   }
 
+  const autoRecoveryMode = stringValue('auto_recovery_mode');
+  if (autoRecoveryMode === 'enabled') {
+    payload.auto_recovery_enabled = true;
+  } else if (autoRecoveryMode === 'disabled') {
+    payload.auto_recovery_enabled = false;
+  }
+
   [
     'request_timeout_enabled',
     'response_header_timeout_enabled',
@@ -504,6 +511,7 @@ const EditChannelModal = (props) => {
     system_prompt: '',
     system_prompt_override: false,
     auto_disable_policy_group: '',
+    auto_recovery_mode: 'default',
     cost_ratio: 1,
     ...defaultTimeoutSettings,
     settings: '',
@@ -807,6 +815,7 @@ const EditChannelModal = (props) => {
     pass_through_body_enabled: false,
     system_prompt: '',
     system_prompt_override: false,
+    auto_recovery_mode: 'default',
     cost_ratio: 1,
     ...defaultTimeoutSettings,
   });
@@ -1169,6 +1178,12 @@ const EditChannelModal = (props) => {
             parsedSettings.system_prompt_override || false;
           data.auto_disable_policy_group =
             parsedSettings.auto_disable_policy_group || '';
+          data.auto_recovery_mode =
+            parsedSettings.auto_recovery_enabled === true
+              ? 'enabled'
+              : parsedSettings.auto_recovery_enabled === false
+                ? 'disabled'
+                : 'default';
           data.cost_ratio =
             typeof parsedSettings.cost_ratio === 'number'
               ? parsedSettings.cost_ratio
@@ -1216,6 +1231,7 @@ const EditChannelModal = (props) => {
           data.system_prompt = '';
           data.system_prompt_override = false;
           data.auto_disable_policy_group = '';
+          data.auto_recovery_mode = 'default';
           data.cost_ratio = 1;
           data.request_timeout_enabled =
             defaultTimeoutSettings.request_timeout_enabled;
@@ -1242,6 +1258,7 @@ const EditChannelModal = (props) => {
         data.system_prompt = '';
         data.system_prompt_override = false;
         data.auto_disable_policy_group = '';
+        data.auto_recovery_mode = 'default';
         data.cost_ratio = 1;
         data.request_timeout_enabled =
           defaultTimeoutSettings.request_timeout_enabled;
@@ -1368,6 +1385,7 @@ const EditChannelModal = (props) => {
         pass_through_body_enabled: data.pass_through_body_enabled,
         system_prompt: data.system_prompt,
         system_prompt_override: data.system_prompt_override || false,
+        auto_recovery_mode: data.auto_recovery_mode || 'default',
         cost_ratio: data.cost_ratio ?? 1,
         request_timeout_enabled: data.request_timeout_enabled,
         request_timeout_seconds: data.request_timeout_seconds,
@@ -1417,6 +1435,9 @@ const EditChannelModal = (props) => {
         (data.weight && data.weight !== 0) ||
         (data.proxy && data.proxy.trim()) ||
         (data.system_prompt && data.system_prompt.trim()) ||
+        (data.auto_disable_policy_group &&
+          data.auto_disable_policy_group.trim()) ||
+        (data.auto_recovery_mode && data.auto_recovery_mode !== 'default') ||
         data.cost_ratio !== 1 ||
         data.request_timeout_enabled !==
           defaultTimeoutSettings.request_timeout_enabled ||
@@ -1809,6 +1830,7 @@ const EditChannelModal = (props) => {
       pass_through_body_enabled: false,
       system_prompt: '',
       system_prompt_override: false,
+      auto_recovery_mode: 'default',
       cost_ratio: 1,
       ...defaultTimeoutSettings,
     });
@@ -2269,6 +2291,7 @@ const EditChannelModal = (props) => {
     delete localInputs.system_prompt;
     delete localInputs.system_prompt_override;
     delete localInputs.auto_disable_policy_group;
+    delete localInputs.auto_recovery_mode;
     delete localInputs.cost_ratio;
     delete localInputs.request_timeout_enabled;
     delete localInputs.request_timeout_seconds;
@@ -4724,6 +4747,24 @@ const EditChannelModal = (props) => {
                           '仅当自动禁用开启时有效，关闭后不会自动禁用该渠道',
                         )}
                         initValue={autoBan}
+                      />
+
+                      <Form.Select
+                        field='auto_recovery_mode'
+                        label={t('自动恢复策略')}
+                        placeholder={t('请选择自动恢复策略')}
+                        optionList={[
+                          { label: t('跟随全局设置'), value: 'default' },
+                          { label: t('启用自动恢复'), value: 'enabled' },
+                          { label: t('禁用自动恢复'), value: 'disabled' },
+                        ]}
+                        style={{ width: '100%' }}
+                        onChange={(value) =>
+                          handleInputChange('auto_recovery_mode', value)
+                        }
+                        extraText={t(
+                          '控制定时渠道测试成功后是否可以重新启用该渠道',
+                        )}
                       />
 
                       <Form.Select

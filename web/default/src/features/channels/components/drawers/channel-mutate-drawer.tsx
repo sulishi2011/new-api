@@ -243,6 +243,8 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     values.thinking_to_content ||
     values.pass_through_body_enabled ||
     values.system_prompt_override ||
+    values.auto_disable_policy_group?.trim() ||
+    (values.auto_recovery_mode && values.auto_recovery_mode !== 'default') ||
     values.claude_beta_query ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
@@ -2568,6 +2570,45 @@ export function ChannelMutateDrawer({
                                 }
                               />
                             </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name='auto_recovery_mode'
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>{t('Auto Recovery')}</FormLabel>
+                            <Select
+                              value={field.value || 'default'}
+                              onValueChange={field.onChange}
+                            >
+                              <FormControl>
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectGroup>
+                                  <SelectItem value='default'>
+                                    {t('Use global setting')}
+                                  </SelectItem>
+                                  <SelectItem value='enabled'>
+                                    {t('Enable recovery')}
+                                  </SelectItem>
+                                  <SelectItem value='disabled'>
+                                    {t('Disable recovery')}
+                                  </SelectItem>
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>
+                              {t(
+                                'Controls whether scheduled channel tests can re-enable this channel.'
+                              )}
+                            </FormDescription>
+                            <FormMessage />
                           </FormItem>
                         )}
                       />

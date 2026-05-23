@@ -44,6 +44,7 @@ type ChannelSettings struct {
 	SystemPrompt                       string   `json:"system_prompt,omitempty"`
 	SystemPromptOverride               bool     `json:"system_prompt_override,omitempty"`
 	AutoDisablePolicyGroup             string   `json:"auto_disable_policy_group,omitempty"`
+	AutoRecoveryEnabled                *bool    `json:"auto_recovery_enabled,omitempty"`
 	CostRatio                          *float64 `json:"cost_ratio,omitempty"`
 	RequestTimeoutEnabled              *bool    `json:"request_timeout_enabled,omitempty"`
 	RequestTimeoutSeconds              *int     `json:"request_timeout_seconds,omitempty"`
@@ -63,6 +64,13 @@ func (s ChannelSettings) GetCostRatio() float64 {
 		return 1
 	}
 	return *s.CostRatio
+}
+
+func (s ChannelSettings) ResolveAutoRecoveryEnabled(defaultEnabled bool) bool {
+	if s.AutoRecoveryEnabled == nil {
+		return defaultEnabled
+	}
+	return *s.AutoRecoveryEnabled
 }
 
 func (s ChannelSettings) Validate() error {

@@ -62,6 +62,7 @@ export const channelFormSchema = z.object({
   system_prompt: z.string().optional(),
   system_prompt_override: z.boolean().optional(),
   auto_disable_policy_group: z.string().optional(),
+  auto_recovery_mode: z.enum(['default', 'enabled', 'disabled']).optional(),
   // Type-specific settings (stored in settings JSON)
   is_enterprise_account: z.boolean().optional(), // OpenRouter specific
   vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
@@ -121,6 +122,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   system_prompt: '',
   system_prompt_override: false,
   auto_disable_policy_group: '',
+  auto_recovery_mode: 'default',
   // Type-specific settings
   is_enterprise_account: false,
   vertex_key_type: 'json',
@@ -158,6 +160,7 @@ export function transformChannelToFormDefaults(
     system_prompt: '',
     system_prompt_override: false,
     auto_disable_policy_group: '',
+    auto_recovery_mode: 'default' as 'default' | 'enabled' | 'disabled',
   }
 
   if (channel.setting) {
@@ -171,6 +174,12 @@ export function transformChannelToFormDefaults(
         system_prompt: parsed.system_prompt || '',
         system_prompt_override: parsed.system_prompt_override || false,
         auto_disable_policy_group: parsed.auto_disable_policy_group || '',
+        auto_recovery_mode:
+          parsed.auto_recovery_enabled === true
+            ? 'enabled'
+            : parsed.auto_recovery_enabled === false
+              ? 'disabled'
+              : 'default',
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -284,6 +293,11 @@ function buildSettingJSON(formData: ChannelFormValues): string {
   if (formData.auto_disable_policy_group?.trim()) {
     settingObj.auto_disable_policy_group =
       formData.auto_disable_policy_group.trim()
+  }
+  if (formData.auto_recovery_mode === 'enabled') {
+    settingObj.auto_recovery_enabled = true
+  } else if (formData.auto_recovery_mode === 'disabled') {
+    settingObj.auto_recovery_enabled = false
   }
   return JSON.stringify(settingObj)
 }

@@ -87,6 +87,7 @@ export interface ChannelSettings {
   system_prompt?: string
   system_prompt_override?: boolean
   auto_disable_policy_group?: string
+  auto_recovery_enabled?: boolean
 }
 
 export interface ChannelOtherSettings {

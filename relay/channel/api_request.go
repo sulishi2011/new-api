@@ -519,7 +519,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	resp, err := client.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
-		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
+		return nil, newDoRequestError(err, info, policy)
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")
@@ -535,6 +535,24 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	_ = req.Body.Close()
 	_ = c.Request.Body.Close()
 	return resp, nil
+}
+
+func newDoRequestError(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) error {
+	if isStreamResponseHeaderTimeout(err, info, policy) {
+		return types.NewErrorWithStatusCode(
+			fmt.Errorf("stream response header timeout after %s", policy.ResponseHeaderTimeout),
+			types.ErrorCodeStreamResponseHeaderTimeout,
+			http.StatusServiceUnavailable,
+		)
+	}
+	return types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
+}
+
+func isStreamResponseHeaderTimeout(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) bool {
+	if err == nil || info == nil || !info.IsStream || policy.ResponseHeaderTimeout <= 0 {
+		return false
+	}
+	return strings.Contains(err.Error(), "timeout awaiting response headers")
 }
 
 func DoTaskApiRequest(a TaskAdaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {

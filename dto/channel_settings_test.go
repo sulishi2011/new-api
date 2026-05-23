@@ -53,6 +53,13 @@ func TestChannelSettingsResolveDefaults(t *testing.T) {
 	assert.Equal(t, DefaultStreamIdleTimeoutSeconds, int(streamIdleTimeout.Seconds()))
 }
 
+func TestChannelSettingsResolveAutoRecoveryEnabled(t *testing.T) {
+	assert.True(t, ChannelSettings{}.ResolveAutoRecoveryEnabled(true))
+	assert.False(t, ChannelSettings{}.ResolveAutoRecoveryEnabled(false))
+	assert.True(t, ChannelSettings{AutoRecoveryEnabled: boolPtr(true)}.ResolveAutoRecoveryEnabled(false))
+	assert.False(t, ChannelSettings{AutoRecoveryEnabled: boolPtr(false)}.ResolveAutoRecoveryEnabled(true))
+}
+
 func TestGetChannelTimeoutDefaults(t *testing.T) {
 	defaults := GetChannelTimeoutDefaults()
 

@@ -1,11 +1,15 @@
 package channel
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -190,4 +194,36 @@ func TestProcessHeaderOverride_PassHeadersTemplateSetsRuntimeHeaders(t *testing.
 	require.Equal(t, "Codex CLI", upstreamReq.Header.Get("Originator"))
 	require.Equal(t, "sess-123", upstreamReq.Header.Get("Session_id"))
 	require.Empty(t, upstreamReq.Header.Get("X-Codex-Beta-Features"))
+}
+
+func TestNewDoRequestError_StreamResponseHeaderTimeout(t *testing.T) {
+	t.Parallel()
+
+	err := newDoRequestError(
+		errors.New("Get \"https://upstream.example/v1/chat/completions\": net/http: timeout awaiting response headers"),
+		&relaycommon.RelayInfo{IsStream: true},
+		service.RelayHTTPClientPolicy{ResponseHeaderTimeout: 6 * time.Second},
+	)
+
+	var apiErr *types.NewAPIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, types.ErrorCodeStreamResponseHeaderTimeout, apiErr.GetErrorCode())
+	require.Equal(t, http.StatusServiceUnavailable, apiErr.StatusCode)
+	require.Contains(t, apiErr.Error(), "stream response header timeout after 6s")
+	require.False(t, types.IsChannelError(apiErr))
+}
+
+func TestNewDoRequestError_NonStreamResponseHeaderTimeoutFallsBack(t *testing.T) {
+	t.Parallel()
+
+	err := newDoRequestError(
+		errors.New("Get \"https://upstream.example/v1/chat/completions\": net/http: timeout awaiting response headers"),
+		&relaycommon.RelayInfo{IsStream: false},
+		service.RelayHTTPClientPolicy{ResponseHeaderTimeout: 6 * time.Second},
+	)
+
+	var apiErr *types.NewAPIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, types.ErrorCodeDoRequestFailed, apiErr.GetErrorCode())
+	require.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
 }

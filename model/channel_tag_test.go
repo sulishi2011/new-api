@@ -272,3 +272,67 @@ func TestArchivedChannelIsHiddenFromRuntimeSelection(t *testing.T) {
 		t.Fatalf("expected enable to unarchive channel, got archived=%v status=%d", reenabled.Archived, reenabled.Status)
 	}
 }
+
+func TestGetChannelSkipsExcludedChannelWhenAlternativeExists(t *testing.T) {
+	setupChannelTagTestDB(t)
+
+	channels := []Channel{
+		{
+			Name:   "failed",
+			Key:    "key-failed",
+			Models: "gpt-test",
+			Group:  "default",
+			Status: common.ChannelStatusEnabled,
+		},
+		{
+			Name:   "alternative",
+			Key:    "key-alternative",
+			Models: "gpt-test",
+			Group:  "default",
+			Status: common.ChannelStatusEnabled,
+		},
+	}
+	if err := BatchInsertChannels(channels); err != nil {
+		t.Fatalf("failed to insert channels: %v", err)
+	}
+
+	var failed Channel
+	if err := DB.First(&failed, "name = ?", "failed").Error; err != nil {
+		t.Fatalf("failed to reload failed channel: %v", err)
+	}
+	var alternative Channel
+	if err := DB.First(&alternative, "name = ?", "alternative").Error; err != nil {
+		t.Fatalf("failed to reload alternative channel: %v", err)
+	}
+
+	selected, err := GetChannel("default", "gpt-test", 0, failed.Id)
+	if err != nil {
+		t.Fatalf("failed to select channel: %v", err)
+	}
+	if selected == nil || selected.Id != alternative.Id {
+		t.Fatalf("expected alternative channel %d, got %#v", alternative.Id, selected)
+	}
+}
+
+func TestGetChannelFallsBackWhenOnlyExcludedChannelExists(t *testing.T) {
+	setupChannelTagTestDB(t)
+
+	channel := Channel{
+		Name:   "only",
+		Key:    "key-only",
+		Models: "gpt-test",
+		Group:  "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	if err := channel.Insert(); err != nil {
+		t.Fatalf("failed to insert channel: %v", err)
+	}
+
+	selected, err := GetChannel("default", "gpt-test", 0, channel.Id)
+	if err != nil {
+		t.Fatalf("failed to select channel: %v", err)
+	}
+	if selected == nil || selected.Id != channel.Id {
+		t.Fatalf("expected excluded channel fallback %d, got %#v", channel.Id, selected)
+	}
+}

@@ -234,6 +234,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		retryParam.ExcludeChannel(channel.Id)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")
@@ -566,6 +567,7 @@ func RelayTask(c *gin.Context) {
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		retryParam.ExcludeChannel(channel.Id)
 	}
 
 	useChannel := c.GetStringSlice("use_channel")

@@ -79,8 +79,12 @@ func ShouldDisableChannel(err *types.NewAPIError, policyGroupIDs ...string) bool
 	return search
 }
 
-func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {
-	if !common.AutomaticEnableChannelEnabled {
+func ShouldEnableChannel(newAPIError *types.NewAPIError, status int, channelSettings ...dto.ChannelSettings) bool {
+	automaticEnableChannelEnabled := common.AutomaticEnableChannelEnabled
+	if len(channelSettings) > 0 {
+		automaticEnableChannelEnabled = channelSettings[0].ResolveAutoRecoveryEnabled(automaticEnableChannelEnabled)
+	}
+	if !automaticEnableChannelEnabled {
 		return false
 	}
 	if newAPIError != nil {

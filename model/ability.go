@@ -88,7 +88,7 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
+func getChannelQuery(group string, model string, retry int, excludedChannelIds ...int) (*gorm.DB, error) {
 	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
 	if retry != 0 {
@@ -99,25 +99,37 @@ func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
 			channelQuery = DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = ?", group, model, true, priority)
 		}
 	}
+	if len(excludedChannelIds) > 0 {
+		channelQuery = channelQuery.Where("channel_id NOT IN ?", excludedChannelIds)
+	}
 
 	return channelQuery, nil
 }
 
-func GetChannel(group string, model string, retry int) (*Channel, error) {
-	var abilities []Ability
-
-	var err error = nil
-	channelQuery, err := getChannelQuery(group, model, retry)
+func getChannelAbilities(group string, model string, retry int, excludedChannelIds ...int) ([]Ability, error) {
+	channelQuery, err := getChannelQuery(group, model, retry, excludedChannelIds...)
 	if err != nil {
 		return nil, err
 	}
+	var abilities []Ability
 	if common.UsingSQLite || common.UsingPostgreSQL {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	} else {
 		err = channelQuery.Order("weight DESC").Find(&abilities).Error
 	}
+	return abilities, err
+}
+
+func GetChannel(group string, model string, retry int, excludedChannelIds ...int) (*Channel, error) {
+	abilities, err := getChannelAbilities(group, model, retry, excludedChannelIds...)
 	if err != nil {
 		return nil, err
+	}
+	if len(abilities) == 0 && len(excludedChannelIds) > 0 {
+		abilities, err = getChannelAbilities(group, model, retry)
+		if err != nil {
+			return nil, err
+		}
 	}
 	channel := Channel{}
 	if len(abilities) > 0 {
