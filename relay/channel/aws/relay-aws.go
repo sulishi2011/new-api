@@ -39,6 +39,16 @@ func getAwsErrorStatusCode(err error) int {
 	return http.StatusInternalServerError
 }
 
+func newAwsInvokeError(err error, operation string, info *relaycommon.RelayInfo, statusCode int) *types.NewAPIError {
+	if info != nil {
+		policy := service.ResolveRelayHTTPClientPolicy(info.ChannelSetting, info.IsStream)
+		if timeoutErr := channel.NewStreamResponseHeaderTimeoutError(err, info, policy); timeoutErr != nil {
+			return timeoutErr
+		}
+	}
+	return types.NewOpenAIError(errors.Wrap(err, operation), types.ErrorCodeAwsInvokeError, statusCode)
+}
+
 func newAwsInvokeContext(c *gin.Context, info *relaycommon.RelayInfo) (context.Context, context.CancelFunc) {
 	parent := context.Background()
 	if c != nil && c.Request != nil {
@@ -236,7 +246,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
 		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return newAwsInvokeError(err, "InvokeModel", info, statusCode), nil
 	}
 
 	claudeInfo := &claude.ClaudeResponseInfo{
@@ -266,7 +276,7 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
 	if err != nil {
 		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModelWithResponseStream"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return newAwsInvokeError(err, "InvokeModelWithResponseStream", info, statusCode), nil
 	}
 	stream := awsResp.GetStream()
 	defer stream.Close()
@@ -364,7 +374,7 @@ func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
 	if err != nil {
 		statusCode := getAwsErrorStatusCode(err)
-		return types.NewOpenAIError(errors.Wrap(err, "InvokeModel"), types.ErrorCodeAwsInvokeError, statusCode), nil
+		return newAwsInvokeError(err, "InvokeModel", info, statusCode), nil
 	}
 
 	// 解析Nova响应

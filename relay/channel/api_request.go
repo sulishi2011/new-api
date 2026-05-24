@@ -538,17 +538,43 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 }
 
 func newDoRequestError(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) error {
-	if isStreamResponseHeaderTimeout(err, info, policy) {
+	if timeoutErr := NewStreamResponseHeaderTimeoutError(err, info, policy); timeoutErr != nil {
+		return timeoutErr
+	}
+	if isContextCanceledError(err) {
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("stream response header timeout after %s", policy.ResponseHeaderTimeout),
-			types.ErrorCodeStreamResponseHeaderTimeout,
-			http.StatusServiceUnavailable,
+			err,
+			types.ErrorCodeDoRequestFailed,
+			499,
+			types.ErrOptionWithSkipRetry(),
+			types.ErrOptionWithNoRecordErrorLog(),
 		)
 	}
 	return types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 }
 
-func isStreamResponseHeaderTimeout(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) bool {
+func NewStreamResponseHeaderTimeoutError(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) *types.NewAPIError {
+	if !IsStreamResponseHeaderTimeout(err, info, policy) {
+		return nil
+	}
+	return types.NewErrorWithStatusCode(
+		fmt.Errorf("stream response header timeout after %s", policy.ResponseHeaderTimeout),
+		types.ErrorCodeStreamResponseHeaderTimeout,
+		http.StatusServiceUnavailable,
+	)
+}
+
+func isContextCanceledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
+}
+
+func IsStreamResponseHeaderTimeout(err error, info *common.RelayInfo, policy service.RelayHTTPClientPolicy) bool {
 	if err == nil || info == nil || !info.IsStream || policy.ResponseHeaderTimeout <= 0 {
 		return false
 	}

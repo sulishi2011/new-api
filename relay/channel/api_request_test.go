@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -226,4 +227,20 @@ func TestNewDoRequestError_NonStreamResponseHeaderTimeoutFallsBack(t *testing.T)
 	require.ErrorAs(t, err, &apiErr)
 	require.Equal(t, types.ErrorCodeDoRequestFailed, apiErr.GetErrorCode())
 	require.Equal(t, http.StatusInternalServerError, apiErr.StatusCode)
+}
+
+func TestNewDoRequestError_ContextCanceledSkipsRetry(t *testing.T) {
+	t.Parallel()
+
+	err := newDoRequestError(
+		context.Canceled,
+		&relaycommon.RelayInfo{IsStream: true},
+		service.RelayHTTPClientPolicy{ResponseHeaderTimeout: 6 * time.Second},
+	)
+
+	var apiErr *types.NewAPIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, types.ErrorCodeDoRequestFailed, apiErr.GetErrorCode())
+	require.Equal(t, 499, apiErr.StatusCode)
+	require.True(t, types.IsSkipRetryError(apiErr))
 }

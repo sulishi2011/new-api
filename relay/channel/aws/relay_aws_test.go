@@ -2,12 +2,15 @@ package aws
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -52,4 +55,79 @@ func TestDoAwsClientRequest_AppliesRuntimeHeaderOverrideToAnthropicBeta(t *testi
 	values, ok := anthropicBeta.([]any)
 	require.True(t, ok)
 	require.Equal(t, []any{"computer-use-2025-01-24"}, values)
+}
+
+func TestNewAwsInvokeErrorStreamResponseHeaderTimeout(t *testing.T) {
+	t.Parallel()
+
+	seconds := 6
+	err := newAwsInvokeError(
+		errors.New("Post \"https://bedrock-runtime.example/model\": net/http: timeout awaiting response headers"),
+		"InvokeModelWithResponseStream",
+		&relaycommon.RelayInfo{
+			IsStream: true,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelSetting: dto.ChannelSettings{
+					StreamResponseHeaderTimeoutEnabled: boolPtr(true),
+					StreamResponseHeaderTimeoutSeconds: &seconds,
+				},
+			},
+		},
+		http.StatusInternalServerError,
+	)
+
+	require.Equal(t, types.ErrorCodeStreamResponseHeaderTimeout, err.GetErrorCode())
+	require.Equal(t, http.StatusServiceUnavailable, err.StatusCode)
+	require.Contains(t, err.Error(), "stream response header timeout after 6s")
+}
+
+func TestNewAwsInvokeErrorContextCanceledSkipsRetry(t *testing.T) {
+	t.Parallel()
+
+	err := newAwsInvokeError(
+		errors.New("operation error Bedrock Runtime: InvokeModelWithResponseStream, context canceled"),
+		"InvokeModelWithResponseStream",
+		&relaycommon.RelayInfo{
+			IsStream: true,
+			ChannelMeta: &relaycommon.ChannelMeta{
+				ChannelSetting: dto.ChannelSettings{
+					StreamResponseHeaderTimeoutEnabled: boolPtr(true),
+					StreamResponseHeaderTimeoutSeconds: intPtr(20),
+				},
+			},
+		},
+		http.StatusInternalServerError,
+	)
+
+	require.Equal(t, types.ErrorCodeAwsInvokeError, err.GetErrorCode())
+	require.Equal(t, 499, err.StatusCode)
+	require.True(t, types.IsSkipRetryError(err))
+}
+
+func TestNewAwsInvokeContextStreamDoesNotUseRequestTimeout(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newAwsInvokeContext(nil, &relaycommon.RelayInfo{
+		IsStream: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelSetting: dto.ChannelSettings{
+				RequestTimeoutEnabled:              boolPtr(true),
+				RequestTimeoutSeconds:              intPtr(5),
+				StreamResponseHeaderTimeoutEnabled: boolPtr(true),
+				StreamResponseHeaderTimeoutSeconds: intPtr(20),
+			},
+		},
+	})
+	defer cancel()
+
+	_, ok := ctx.Deadline()
+	require.False(t, ok)
+}
+
+func intPtr(v int) *int {
+	return &v
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -281,12 +282,28 @@ func NewOpenAIError(err error, errorCode ErrorCode, statusCode int, ops ...NewAP
 		}
 		return newErr
 	}
+	if isContextCanceledError(err) {
+		ops = append(ops, ErrOptionWithSkipRetry(), ErrOptionWithNoRecordErrorLog())
+		return NewErrorWithStatusCode(err, errorCode, 499, ops...)
+	}
 	openaiError := OpenAIError{
 		Message: err.Error(),
 		Type:    string(errorCode),
 		Code:    errorCode,
 	}
-	return WithOpenAIError(openaiError, statusCode, ops...)
+	e := WithOpenAIError(openaiError, statusCode, ops...)
+	e.Err = err
+	return e
+}
+
+func isContextCanceledError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "context canceled")
 }
 
 func InitOpenAIError(errorCode ErrorCode, statusCode int, ops ...NewAPIErrorOptions) *NewAPIError {

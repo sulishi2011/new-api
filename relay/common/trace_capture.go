@@ -30,6 +30,7 @@ type TracePayloadPart struct {
 	bodyFile              *os.File
 	bodyWriter            *bufio.Writer
 	bodyFileClosed        bool
+	bodyFileHandedOff     bool
 	bodyObjectContentType string
 	bodyMu                sync.Mutex
 }
@@ -48,6 +49,23 @@ type TraceFullBodyFile struct {
 	ObjectKey   string
 	ContentType string
 	Size        int64
+}
+
+func (info *RelayInfo) TakeTracePayload() *TracePayload {
+	if info == nil {
+		return nil
+	}
+	payload := info.TracePayload
+	info.TracePayload = nil
+	return payload
+}
+
+func (info *RelayInfo) DiscardTracePayload() {
+	payload := info.TakeTracePayload()
+	if payload == nil {
+		return
+	}
+	payload.CleanupFullBodyFiles()
 }
 
 func (info *RelayInfo) ensureTracePayload() *TracePayload {
@@ -140,7 +158,7 @@ func traceFullBodyEnabled() bool {
 }
 
 func (part *TracePayloadPart) ensureFullBodyFileLocked(contentType string) bool {
-	if !traceFullBodyEnabled() || part == nil || part.FullBodyTruncated || part.FullBodyError != "" {
+	if !traceFullBodyEnabled() || part == nil || part.FullBodyTruncated || part.FullBodyError != "" || part.bodyFileHandedOff {
 		return false
 	}
 	if part.bodyFile != nil {
@@ -249,14 +267,23 @@ func (part *TracePayloadPart) closeFullBodyFileLocked() error {
 }
 
 func (part *TracePayloadPart) prepareFullBodyFile(kind string, objectKey string) (*TraceFullBodyFile, error) {
-	if part == nil || part.bodyFilePath == "" || part.BodyObjectSize <= 0 {
+	if part == nil {
 		return nil, nil
 	}
 	part.bodyMu.Lock()
 	defer part.bodyMu.Unlock()
+	if part.bodyFileHandedOff || part.bodyFilePath == "" || part.BodyObjectSize <= 0 {
+		return nil, nil
+	}
 	if err := part.closeFullBodyFileLocked(); err != nil {
 		return nil, err
 	}
+	filePath := part.bodyFilePath
+	part.bodyFilePath = ""
+	part.bodyFile = nil
+	part.bodyWriter = nil
+	part.bodyFileClosed = true
+	part.bodyFileHandedOff = true
 	part.BodyObjectKey = objectKey
 	contentType := part.bodyObjectContentType
 	if contentType == "" {
@@ -264,7 +291,7 @@ func (part *TracePayloadPart) prepareFullBodyFile(kind string, objectKey string)
 	}
 	return &TraceFullBodyFile{
 		Kind:        kind,
-		Path:        part.bodyFilePath,
+		Path:        filePath,
 		ObjectKey:   objectKey,
 		ContentType: contentType,
 		Size:        part.BodyObjectSize,
@@ -295,6 +322,11 @@ func (payload *TracePayload) PrepareFullBodyFiles(requestObjectKey string, respo
 		files = append(files, *file)
 	}
 	if file, err := payload.Response.prepareFullBodyFile("response", responseObjectKey); err != nil {
+		for _, prepared := range files {
+			if prepared.Path != "" {
+				_ = os.Remove(prepared.Path)
+			}
+		}
 		return nil, err
 	} else if file != nil {
 		files = append(files, *file)

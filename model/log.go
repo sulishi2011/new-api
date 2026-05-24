@@ -255,6 +255,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	}
 	err := createLog(log)
 	if err != nil {
+		cleanupLogTraceFullBodyFiles(trace)
 		logger.LogError(c, "failed to record log: "+err.Error())
 	} else {
 		persistLogTrace(c.Request.Context(), log, trace)
@@ -493,6 +494,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	}
 	err := createLog(log)
 	if err != nil {
+		cleanupLogTraceFullBodyFiles(trace)
 		logger.LogError(c, "failed to record log: "+err.Error())
 	} else {
 		persistLogTrace(c.Request.Context(), log, trace)
@@ -552,6 +554,7 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 	err := createLog(log)
 	if err != nil {
+		cleanupLogTraceFullBodyFiles(trace)
 		common.SysLog("failed to record task billing log: " + err.Error())
 	} else if params.LogType == LogTypeConsume {
 		persistLogTrace(context.Background(), log, trace)

@@ -485,6 +485,10 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 	tok := time.Now()
 	milliseconds := tok.Sub(tik).Milliseconds()
 	consumedTime := float64(milliseconds) / 1000.0
+	upstreamRequestId := ""
+	if info.TracePayload != nil {
+		upstreamRequestId = info.TracePayload.UpstreamRequestId
+	}
 	other := buildTestLogOther(c, info, priceData, usage, tieredResult)
 	model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{
 		ChannelId:        channel.Id,
@@ -499,10 +503,6 @@ func testChannel(channel *model.Channel, testModel string, endpointType string, 
 		Group:            info.UsingGroup,
 		Other:            other,
 	})
-	upstreamRequestId := ""
-	if info.TracePayload != nil {
-		upstreamRequestId = info.TracePayload.UpstreamRequestId
-	}
 	common.SysLog(fmt.Sprintf("testing channel #%d completed, response_bytes=%d, upstream_request_id=%s", channel.Id, len(respBody), upstreamRequestId))
 	return testResult{
 		context:     c,

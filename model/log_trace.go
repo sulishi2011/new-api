@@ -491,7 +491,7 @@ func persistLogTraceSync(ctx context.Context, log *Log, trace interface{}) error
 		record.Backend = "s3"
 	}
 	if err := LOG_DB.Create(record).Error; err != nil {
-		cleanupLogTraceFullBodyFiles(trace)
+		cleanupTraceFullBodyFiles(fullBodyFiles)
 		return err
 	}
 

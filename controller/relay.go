@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -122,6 +123,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+	defer relayInfo.DiscardTracePayload()
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
 	needCountToken := constant.CountToken
@@ -234,6 +236,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		relayInfo.DiscardTracePayload()
 		retryParam.ExcludeChannel(channel.Id)
 	}
 
@@ -327,6 +330,9 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if openaiErr == nil {
 		return false
 	}
+	if isRequestContextCanceled(c, openaiErr) {
+		return false
+	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}
@@ -355,7 +361,21 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	return operation_setting.ShouldRetryByStatusCode(code)
 }
 
+func isRequestContextCanceled(c *gin.Context, err error) bool {
+	if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+		return true
+	}
+	if errors.Is(err, context.Canceled) {
+		return true
+	}
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "context canceled")
+}
+
 func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, channelError types.ChannelError, err *types.NewAPIError) {
+	if isRequestContextCanceled(c, err) {
+		logger.LogInfo(c, fmt.Sprintf("skip channel failure record for canceled request (channel #%d, %s): %s", channelError.ChannelId, requestCancelDebugSummary(c, relayInfo), err.Error()))
+		return
+	}
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, err.Error()))
 	service.RecordChannelFailure(c, relayInfo, channelError, err)
 	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
@@ -402,6 +422,31 @@ func processChannelError(c *gin.Context, relayInfo *relaycommon.RelayInfo, chann
 		model.RecordErrorLog(c, userId, channelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
 
+}
+
+func requestCancelDebugSummary(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	retryIndex := 0
+	elapsed := time.Duration(0)
+	if relayInfo != nil {
+		retryIndex = relayInfo.RetryIndex
+		if !relayInfo.StartTime.IsZero() {
+			elapsed = time.Since(relayInfo.StartTime).Round(time.Millisecond)
+		}
+	}
+
+	requestErr := "<nil>"
+	if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+		requestErr = c.Request.Context().Err().Error()
+	}
+
+	writerWritten := false
+	writerStatus := 0
+	if c != nil && c.Writer != nil {
+		writerWritten = c.Writer.Written()
+		writerStatus = c.Writer.Status()
+	}
+
+	return fmt.Sprintf("retry=%d, elapsed=%s, request_ctx_err=%s, writer_written=%t, writer_status=%d", retryIndex, elapsed, requestErr, writerWritten, writerStatus)
 }
 
 func RelayMidjourney(c *gin.Context) {
@@ -481,6 +526,7 @@ func RelayTaskFetch(c *gin.Context) {
 		})
 		return
 	}
+	defer relayInfo.DiscardTracePayload()
 	if taskErr := relay.RelayTaskFetch(c, relayInfo.RelayMode); taskErr != nil {
 		respondTaskError(c, taskErr)
 	}
@@ -496,6 +542,7 @@ func RelayTask(c *gin.Context) {
 		})
 		return
 	}
+	defer relayInfo.DiscardTracePayload()
 
 	if taskErr := relay.ResolveOriginTask(c, relayInfo); taskErr != nil {
 		respondTaskError(c, taskErr)
@@ -567,6 +614,7 @@ func RelayTask(c *gin.Context) {
 		if !shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
+		relayInfo.DiscardTracePayload()
 		retryParam.ExcludeChannel(channel.Id)
 	}
 

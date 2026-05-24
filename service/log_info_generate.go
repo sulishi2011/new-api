@@ -211,10 +211,14 @@ func appendFinalRequestFormat(relayInfo *relaycommon.RelayInfo, other map[string
 }
 
 func appendTraceInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
-	if relayInfo == nil || other == nil || relayInfo.TracePayload == nil {
+	if relayInfo == nil || other == nil {
 		return
 	}
-	other["trace"] = relayInfo.TracePayload
+	trace := relayInfo.TakeTracePayload()
+	if trace == nil {
+		return
+	}
+	other["trace"] = trace
 }
 
 func AppendTraceOtherInfo(relayInfo *relaycommon.RelayInfo, other map[string]interface{}) {
