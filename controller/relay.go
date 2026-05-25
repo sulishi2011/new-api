@@ -223,7 +223,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 
 		if newAPIError == nil {
-			service.RecordChannelSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()))
+			service.RecordChannelSuccess(c, selectedChannelError(c, channel))
 			relayInfo.LastError = nil
 			return
 		}
@@ -231,7 +231,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
 
-		processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()), newAPIError)
+		processChannelError(c, relayInfo, selectedChannelError(c, channel), newAPIError)
 
 		remainingRetry := common.RetryTimes - retryParam.GetRetry()
 		retryAllowed, retryReason := shouldRetryWithReason(c, newAPIError, remainingRetry)
@@ -266,6 +266,64 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+func selectedChannelError(c *gin.Context, channel *model.Channel) types.ChannelError {
+	channelId := 0
+	channelType := 0
+	channelName := ""
+	isMultiKey := false
+	autoBan := false
+	vendorProfileCode := ""
+	policyGroup := ""
+	usingKey := ""
+
+	if channel != nil {
+		channelId = channel.Id
+		channelType = channel.Type
+		channelName = channel.Name
+		isMultiKey = channel.ChannelInfo.IsMultiKey
+		autoBan = channel.GetAutoBan()
+		vendorProfileCode = channel.GetVendorProfileCode()
+		policyGroup = channel.GetAutoDisablePolicyGroup()
+	}
+
+	if c != nil {
+		if id := common.GetContextKeyInt(c, constant.ContextKeyChannelId); id != 0 {
+			channelId = id
+		}
+		if name := common.GetContextKeyString(c, constant.ContextKeyChannelName); name != "" {
+			channelName = name
+		}
+		if channelTypeFromContext := common.GetContextKeyInt(c, constant.ContextKeyChannelType); channelTypeFromContext != 0 {
+			channelType = channelTypeFromContext
+		}
+		if _, ok := common.GetContextKey(c, constant.ContextKeyChannelIsMultiKey); ok {
+			isMultiKey = common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey)
+		}
+		if value, ok := common.GetContextKey(c, constant.ContextKeyChannelAutoBan); ok {
+			if autoBanFromContext, ok := value.(bool); ok {
+				autoBan = autoBanFromContext
+			}
+		}
+		if setting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting); ok {
+			if group := strings.TrimSpace(setting.AutoDisablePolicyGroup); group != "" {
+				policyGroup = group
+			}
+		}
+		usingKey = common.GetContextKeyString(c, constant.ContextKeyChannelKey)
+	}
+
+	return *types.NewChannelError(
+		channelId,
+		channelType,
+		channelName,
+		isMultiKey,
+		usingKey,
+		autoBan,
+		vendorProfileCode,
+		policyGroup,
+	)
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
@@ -610,15 +668,13 @@ func RelayTask(c *gin.Context) {
 
 		result, taskErr = relay.RelayTaskSubmit(c, relayInfo)
 		if taskErr == nil {
-			service.RecordChannelSuccess(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
-				common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()))
+			service.RecordChannelSuccess(c, selectedChannelError(c, channel))
 			break
 		}
 
 		if !taskErr.LocalError {
 			processChannelError(c, relayInfo,
-				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
-					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()),
+				selectedChannelError(c, channel),
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
 		}
 

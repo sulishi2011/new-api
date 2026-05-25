@@ -7,6 +7,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
@@ -86,4 +90,37 @@ func TestShouldRetryRejectsStreamResponseHeaderTimeoutWithoutRemainingRetry(t *t
 	retry, reason := shouldRetryWithReason(c, err, 0)
 	require.False(t, retry)
 	require.Equal(t, "no_remaining_retry", reason)
+}
+
+func TestSelectedChannelErrorUsesPolicyGroupFromContext(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	autoBan := 1
+	channel := &model.Channel{
+		Id:      88,
+		Type:    14,
+		Name:    "Prince-53",
+		AutoBan: &autoBan,
+	}
+
+	common.SetContextKey(c, constant.ContextKeyChannelId, 88)
+	common.SetContextKey(c, constant.ContextKeyChannelName, "Prince-53")
+	common.SetContextKey(c, constant.ContextKeyChannelType, 14)
+	common.SetContextKey(c, constant.ContextKeyChannelIsMultiKey, true)
+	common.SetContextKey(c, constant.ContextKeyChannelAutoBan, true)
+	common.SetContextKey(c, constant.ContextKeyChannelKey, "sk-test")
+	common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{
+		AutoDisablePolicyGroup: "claude-aws-policy",
+	})
+
+	channelError := selectedChannelError(c, channel)
+
+	require.Equal(t, 88, channelError.ChannelId)
+	require.Equal(t, "Prince-53", channelError.ChannelName)
+	require.Equal(t, 14, channelError.ChannelType)
+	require.True(t, channelError.IsMultiKey)
+	require.True(t, channelError.AutoBan)
+	require.Equal(t, "sk-test", channelError.UsingKey)
+	require.Equal(t, "claude-aws-policy", channelError.AutoDisablePolicyGroup)
 }

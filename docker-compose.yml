@@ -1,101 +1,130 @@
 # New-API Docker Compose Configuration
 #
 # Quick Start:
-#   1. docker-compose up -d
-#   2. Access at http://localhost:3000
+#   1. docker compose up -d
+#   2. Access master at http://localhost:3000
+#   3. Access slave at http://localhost:3001
 #
-# This compose file is tuned for AWS c5.xlarge with AWS RDS PostgreSQL.
 # Put secrets in .env instead of committing them in this file.
 
+x-new-api-env: &new-api-env
+  SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
+  LOG_SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
+  SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
+  LOG_SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
+  REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
+  SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+  CRYPTO_SECRET: ${CRYPTO_SECRET:?set CRYPTO_SECRET}
+  TZ: Asia/Shanghai
+  GIN_MODE: release
+  DEBUG: "false"
+  ERROR_LOG_ENABLED: "${ERROR_LOG_ENABLED:-true}"
+  DIFY_DEBUG: "false"
+  BATCH_UPDATE_ENABLED: "true"
+  BATCH_UPDATE_INTERVAL: "10"
+  SYNC_FREQUENCY: "${SYNC_FREQUENCY:-60}"
+  SQL_MAX_IDLE_CONNS: "${SQL_MAX_IDLE_CONNS:-10}"
+  SQL_MAX_OPEN_CONNS: "${SQL_MAX_OPEN_CONNS:-30}"
+  SQL_MAX_LIFETIME: "${SQL_MAX_LIFETIME:-300}"
+  REDIS_POOL_SIZE: "${REDIS_POOL_SIZE:-30}"
+  RELAY_MAX_IDLE_CONNS: "${RELAY_MAX_IDLE_CONNS:-500}"
+  RELAY_MAX_IDLE_CONNS_PER_HOST: "${RELAY_MAX_IDLE_CONNS_PER_HOST:-100}"
+  MAX_REQUEST_BODY_MB: "${MAX_REQUEST_BODY_MB:-32}"
+  STREAM_SCANNER_MAX_BUFFER_MB: "${STREAM_SCANNER_MAX_BUFFER_MB:-64}"
+  STREAMING_TIMEOUT: "${STREAMING_TIMEOUT:-300}"
+  TASK_QUERY_LIMIT: "${TASK_QUERY_LIMIT:-100}"
+  LOG_RETENTION_ENABLED: "${LOG_RETENTION_ENABLED:-true}"
+  LOG_RETENTION_CONSUME_DAYS: "${LOG_RETENTION_CONSUME_DAYS:-14}"
+  LOG_RETENTION_ERROR_DAYS: "${LOG_RETENTION_ERROR_DAYS:-30}"
+  LOG_RETENTION_SYSTEM_DAYS: "${LOG_RETENTION_SYSTEM_DAYS:-90}"
+  LOG_RETENTION_MANAGE_DAYS: "${LOG_RETENTION_MANAGE_DAYS:-180}"
+  LOG_RETENTION_TOPUP_DAYS: "${LOG_RETENTION_TOPUP_DAYS:-0}"
+  LOG_RETENTION_REFUND_DAYS: "${LOG_RETENTION_REFUND_DAYS:-0}"
+  LOG_CLEANUP_INTERVAL_HOURS: "${LOG_CLEANUP_INTERVAL_HOURS:-24}"
+  LOG_CLEANUP_BATCH_SIZE: "${LOG_CLEANUP_BATCH_SIZE:-1000}"
+  LOG_CLEANUP_BATCH_SLEEP_MS: "${LOG_CLEANUP_BATCH_SLEEP_MS:-200}"
+  TRACE_STORAGE_ENABLED: "${TRACE_STORAGE_ENABLED:-false}"
+  TRACE_STORAGE_BACKEND: "${TRACE_STORAGE_BACKEND:-s3}"
+  TRACE_RETENTION_DAYS: "${TRACE_RETENTION_DAYS:-7}"
+  TRACE_CAPTURE_MODE: "${TRACE_CAPTURE_MODE:-error}"
+  TRACE_SUCCESS_SAMPLE_RATE: "${TRACE_SUCCESS_SAMPLE_RATE:-0}"
+  TRACE_UPLOAD_ASYNC: "${TRACE_UPLOAD_ASYNC:-true}"
+  TRACE_UPLOAD_SYNC_FOR_ERROR: "${TRACE_UPLOAD_SYNC_FOR_ERROR:-true}"
+  TRACE_UPLOAD_BATCH_ENABLED: "${TRACE_UPLOAD_BATCH_ENABLED:-false}"
+  TRACE_UPLOAD_BATCH_WORKERS: "${TRACE_UPLOAD_BATCH_WORKERS:-}"
+  TRACE_UPLOAD_WORKERS: "${TRACE_UPLOAD_WORKERS:-}"
+  TRACE_UPLOAD_QUEUE_SIZE: "${TRACE_UPLOAD_QUEUE_SIZE:-1000}"
+  TRACE_UPLOAD_BATCH_SIZE: "${TRACE_UPLOAD_BATCH_SIZE:-100}"
+  TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS: "${TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS:-2}"
+  TRACE_UPLOAD_BATCH_MAX_BYTES: "${TRACE_UPLOAD_BATCH_MAX_BYTES:-8388608}"
+  TRACE_FULL_BODY_ENABLED: "${TRACE_FULL_BODY_ENABLED:-true}"
+  TRACE_FULL_BODY_MAX_BYTES: "${TRACE_FULL_BODY_MAX_BYTES:-20971520}"
+  TRACE_S3_BUCKET: "${TRACE_S3_BUCKET:-}"
+  TRACE_S3_REGION: "${TRACE_S3_REGION:-us-east-1}"
+  TRACE_S3_ENDPOINT: "${TRACE_S3_ENDPOINT:-}"
+  TRACE_S3_ACCESS_KEY_ID: "${TRACE_S3_ACCESS_KEY_ID:-}"
+  TRACE_S3_SECRET_ACCESS_KEY: "${TRACE_S3_SECRET_ACCESS_KEY:-}"
+  TRACE_S3_PREFIX: "${TRACE_S3_PREFIX:-new-api/traces}"
+  TRACE_S3_FORCE_PATH_STYLE: "${TRACE_S3_FORCE_PATH_STYLE:-false}"
+  TRACE_S3_SSE: "${TRACE_S3_SSE:-AES256}"
+
+x-new-api-healthcheck: &new-api-healthcheck
+  test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -Eq '\"success\":[[:space:]]*true'"]
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
+
+x-new-api-logging: &new-api-logging
+  driver: json-file
+  options:
+    max-size: "50m"
+    max-file: "3"
+
 services:
-  new-api:
-    image: ghcr.io/sulishi2011/new-api:custom-main
-    container_name: ${NEW_API_CONTAINER_NAME:-new-api}
+  new-api-master:
+    image: ${NEW_API_IMAGE}
+    container_name: ${NEW_API_MASTER_CONTAINER_NAME:-new-api-master}
     restart: always
     command: ["--log-dir", ""]
     ports:
-      - "${APP_PORT:-3000}:3000"
+      - "${APP_MASTER_PORT:-3000}:3000"
     volumes:
-      - ./data:/data
+      - ./data/master:/data
     environment:
-      NODE_TYPE: "${NODE_TYPE:-master}"
-      SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
-      LOG_SQL_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
-      SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_APP_DB:-new-api}?sslmode=require
-      LOG_SQL_READ_DSN: postgresql://${AWS_RDS_USER:-admin}:${AWS_RDS_PASSWORD:?set AWS_RDS_PASSWORD}@new-api-master-slave.cstcaqeoq6o8.us-east-1.rds.amazonaws.com:5432/${AWS_RDS_LOG_DB:-new-api-logs}?sslmode=require
-      REDIS_CONN_STRING: redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD}@redis:6379/0
-      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
-      CRYPTO_SECRET: ${CRYPTO_SECRET:?set CRYPTO_SECRET}
-      TZ: Asia/Shanghai
-      GIN_MODE: release
-      DEBUG: "false"
-      TMPDIR: "${TMPDIR:-/data/tmp}"
-      ERROR_LOG_ENABLED: "${ERROR_LOG_ENABLED:-true}"
-      DIFY_DEBUG: "false"
-      BATCH_UPDATE_ENABLED: "true"
-      BATCH_UPDATE_INTERVAL: "10"
-      NODE_NAME: ${NODE_NAME:-new-api-node-1}
-      SYNC_FREQUENCY: "${SYNC_FREQUENCY:-60}"
-      SQL_MAX_IDLE_CONNS: "${SQL_MAX_IDLE_CONNS:-10}"
-      SQL_MAX_OPEN_CONNS: "${SQL_MAX_OPEN_CONNS:-30}"
-      SQL_MAX_LIFETIME: "${SQL_MAX_LIFETIME:-300}"
-      REDIS_POOL_SIZE: "${REDIS_POOL_SIZE:-30}"
-      RELAY_MAX_IDLE_CONNS: "${RELAY_MAX_IDLE_CONNS:-500}"
-      RELAY_MAX_IDLE_CONNS_PER_HOST: "${RELAY_MAX_IDLE_CONNS_PER_HOST:-100}"
-      MAX_REQUEST_BODY_MB: "${MAX_REQUEST_BODY_MB:-32}"
-      STREAM_SCANNER_MAX_BUFFER_MB: "${STREAM_SCANNER_MAX_BUFFER_MB:-64}"
-      STREAMING_TIMEOUT: "${STREAMING_TIMEOUT:-300}"
-      TASK_QUERY_LIMIT: "${TASK_QUERY_LIMIT:-100}"
-      LOG_RETENTION_ENABLED: "${LOG_RETENTION_ENABLED:-true}"
-      LOG_RETENTION_CONSUME_DAYS: "${LOG_RETENTION_CONSUME_DAYS:-14}"
-      LOG_RETENTION_ERROR_DAYS: "${LOG_RETENTION_ERROR_DAYS:-30}"
-      LOG_RETENTION_SYSTEM_DAYS: "${LOG_RETENTION_SYSTEM_DAYS:-90}"
-      LOG_RETENTION_MANAGE_DAYS: "${LOG_RETENTION_MANAGE_DAYS:-180}"
-      LOG_RETENTION_TOPUP_DAYS: "${LOG_RETENTION_TOPUP_DAYS:-0}"
-      LOG_RETENTION_REFUND_DAYS: "${LOG_RETENTION_REFUND_DAYS:-0}"
-      LOG_CLEANUP_INTERVAL_HOURS: "${LOG_CLEANUP_INTERVAL_HOURS:-24}"
-      LOG_CLEANUP_BATCH_SIZE: "${LOG_CLEANUP_BATCH_SIZE:-1000}"
-      LOG_CLEANUP_BATCH_SLEEP_MS: "${LOG_CLEANUP_BATCH_SLEEP_MS:-200}"
-      TRACE_STORAGE_ENABLED: "${TRACE_STORAGE_ENABLED:-false}"
-      TRACE_STORAGE_BACKEND: "${TRACE_STORAGE_BACKEND:-s3}"
-      TRACE_RETENTION_DAYS: "${TRACE_RETENTION_DAYS:-7}"
-      TRACE_CAPTURE_MODE: "${TRACE_CAPTURE_MODE:-error}"
-      TRACE_SUCCESS_SAMPLE_RATE: "${TRACE_SUCCESS_SAMPLE_RATE:-0}"
-      TRACE_UPLOAD_ASYNC: "${TRACE_UPLOAD_ASYNC:-true}"
-      TRACE_UPLOAD_SYNC_FOR_ERROR: "${TRACE_UPLOAD_SYNC_FOR_ERROR:-true}"
-      TRACE_UPLOAD_BATCH_ENABLED: "${TRACE_UPLOAD_BATCH_ENABLED:-false}"
-      TRACE_UPLOAD_BATCH_WORKERS: "${TRACE_UPLOAD_BATCH_WORKERS:-}"
-      TRACE_UPLOAD_WORKERS: "${TRACE_UPLOAD_WORKERS:-}"
-      TRACE_UPLOAD_QUEUE_SIZE: "${TRACE_UPLOAD_QUEUE_SIZE:-1000}"
-      TRACE_UPLOAD_BATCH_SIZE: "${TRACE_UPLOAD_BATCH_SIZE:-100}"
-      TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS: "${TRACE_UPLOAD_BATCH_FLUSH_INTERVAL_SECONDS:-2}"
-      TRACE_UPLOAD_BATCH_MAX_BYTES: "${TRACE_UPLOAD_BATCH_MAX_BYTES:-8388608}"
-      TRACE_FULL_BODY_ENABLED: "${TRACE_FULL_BODY_ENABLED:-true}"
-      TRACE_FULL_BODY_MAX_BYTES: "${TRACE_FULL_BODY_MAX_BYTES:-20971520}"
-      TRACE_S3_BUCKET: "${TRACE_S3_BUCKET:-}"
-      TRACE_S3_REGION: "${TRACE_S3_REGION:-us-east-1}"
-      TRACE_S3_ENDPOINT: "${TRACE_S3_ENDPOINT:-}"
-      TRACE_S3_ACCESS_KEY_ID: "${TRACE_S3_ACCESS_KEY_ID:-}"
-      TRACE_S3_SECRET_ACCESS_KEY: "${TRACE_S3_SECRET_ACCESS_KEY:-}"
-      TRACE_S3_PREFIX: "${TRACE_S3_PREFIX:-new-api/traces}"
-      TRACE_S3_FORCE_PATH_STYLE: "${TRACE_S3_FORCE_PATH_STYLE:-false}"
-      TRACE_S3_SSE: "${TRACE_S3_SSE:-AES256}"
+      <<: *new-api-env
+      NODE_TYPE: master
+      NODE_NAME: ${MASTER_NODE_NAME:-new-api-master}
+      TMPDIR: "${MASTER_TMPDIR:-/data/tmp}"
     depends_on:
       redis:
         condition: service_healthy
     networks:
       - new-api-network
-    healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:3000/api/status | grep -Eq '\"success\":[[:space:]]*true'"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    logging:
-      driver: json-file
-      options:
-        max-size: "50m"
-        max-file: "3"
+    healthcheck: *new-api-healthcheck
+    logging: *new-api-logging
+
+  new-api-slave:
+    image: ${NEW_API_IMAGE}
+    container_name: ${NEW_API_SLAVE_CONTAINER_NAME:-new-api-slave}
+    restart: always
+    command: ["--log-dir", ""]
+    ports:
+      - "${APP_SLAVE_PORT:-3001}:3000"
+    volumes:
+      - ./data/slave:/data
+    environment:
+      <<: *new-api-env
+      NODE_TYPE: slave
+      NODE_NAME: ${SLAVE_NODE_NAME:-new-api-slave}
+      TMPDIR: "${SLAVE_TMPDIR:-/data/tmp}"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - new-api-network
+    healthcheck: *new-api-healthcheck
+    logging: *new-api-logging
 
   redis:
     image: redis:7
