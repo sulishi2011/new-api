@@ -53,3 +53,37 @@ func TestShouldRetryAllowsRetryableStatusWhenRequestActive(t *testing.T) {
 	require.True(t, shouldRetry(c, err, 1))
 	require.False(t, isRequestContextCanceled(c, err))
 }
+
+func TestShouldRetryAllowsStreamResponseHeaderTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	err := types.NewErrorWithStatusCode(
+		errors.New("stream response header timeout after 5s"),
+		types.ErrorCodeStreamResponseHeaderTimeout,
+		http.StatusServiceUnavailable,
+	)
+
+	retry, reason := shouldRetryWithReason(c, err, 1)
+	require.True(t, retry)
+	require.Equal(t, "status_code_retry", reason)
+}
+
+func TestShouldRetryRejectsStreamResponseHeaderTimeoutWithoutRemainingRetry(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	err := types.NewErrorWithStatusCode(
+		errors.New("stream response header timeout after 5s"),
+		types.ErrorCodeStreamResponseHeaderTimeout,
+		http.StatusServiceUnavailable,
+	)
+
+	retry, reason := shouldRetryWithReason(c, err, 0)
+	require.False(t, retry)
+	require.Equal(t, "no_remaining_retry", reason)
+}

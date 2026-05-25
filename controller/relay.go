@@ -233,7 +233,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, relayInfo, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()), newAPIError)
 
-		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
+		remainingRetry := common.RetryTimes - retryParam.GetRetry()
+		retryAllowed, retryReason := shouldRetryWithReason(c, newAPIError, remainingRetry)
+		if !retryAllowed {
+			logger.LogInfo(c, fmt.Sprintf("skip retry: reason=%s, channel #%d, status_code=%d, error_code=%s, remaining_retry=%d", retryReason, channel.Id, newAPIError.StatusCode, newAPIError.GetErrorCode(), remainingRetry))
 			break
 		}
 		relayInfo.DiscardTracePayload()
@@ -327,38 +330,46 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
+	retry, _ := shouldRetryWithReason(c, openaiErr, retryTimes)
+	return retry
+}
+
+func shouldRetryWithReason(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) (bool, string) {
 	if openaiErr == nil {
-		return false
+		return false, "nil_error"
 	}
 	if isRequestContextCanceled(c, openaiErr) {
-		return false
+		return false, "request_context_canceled"
 	}
 	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
+		return false, "channel_affinity_skip_retry"
 	}
 	if types.IsChannelError(openaiErr) {
-		return true
+		return true, "channel_error"
 	}
 	if types.IsSkipRetryError(openaiErr) {
-		return false
+		return false, "skip_retry_error"
 	}
 	if retryTimes <= 0 {
-		return false
+		return false, "no_remaining_retry"
 	}
 	if _, ok := c.Get("specific_channel_id"); ok {
-		return false
+		return false, "specific_channel"
 	}
 	code := openaiErr.StatusCode
 	if code >= 200 && code < 300 {
-		return false
+		return false, "success_status_code"
 	}
 	if code < 100 || code > 599 {
-		return true
+		return true, "invalid_status_code_retry"
 	}
 	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
+		return false, "always_skip_retry_error_code"
 	}
-	return operation_setting.ShouldRetryByStatusCode(code)
+	if operation_setting.ShouldRetryByStatusCode(code) {
+		return true, "status_code_retry"
+	}
+	return false, "status_code_policy"
 }
 
 func isRequestContextCanceled(c *gin.Context, err error) bool {
