@@ -77,7 +77,7 @@ const SiderBar = ({ onNavigate = () => {} }) => {
         itemKey: 'detail',
         to: '/detail',
         className:
-          localStorage.getItem('enable_data_export') === 'true'
+          isAdmin() && localStorage.getItem('enable_data_export') === 'true'
             ? ''
             : 'tableHiddle',
       },

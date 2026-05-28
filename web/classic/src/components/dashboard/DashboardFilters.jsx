@@ -19,7 +19,6 @@ For commercial licensing, please contact support@quantumnous.com
 
 import React from 'react';
 import { Button, DatePicker, Input, Select } from '@douyinfe/semi-ui';
-import { IconSearch } from '@douyinfe/semi-icons';
 
 const DashboardFilters = ({
   inputs,
@@ -31,7 +30,6 @@ const DashboardFilters = ({
   handleSearch,
   handleReset,
   loading,
-  isAdminUser,
   t,
 }) => {
   return (
@@ -88,18 +86,6 @@ const DashboardFilters = ({
             }
           />
 
-          {isAdminUser && (
-            <Input
-              value={inputs.username}
-              prefix={<IconSearch />}
-              placeholder={t('用户名称')}
-              showClear
-              pure
-              size='small'
-              onChange={(value) => handleInputChange(value, 'username')}
-            />
-          )}
-
           <Input
             value={inputs.model_name}
             placeholder={t('模型')}
@@ -134,42 +120,6 @@ const DashboardFilters = ({
             pure
             size='small'
             onChange={(value) => handleInputChange(value, 'token_id')}
-          />
-
-          <Input
-            value={inputs.vendor_profile_id}
-            placeholder={t('供应商配置 ID')}
-            showClear
-            pure
-            size='small'
-            onChange={(value) => handleInputChange(value, 'vendor_profile_id')}
-          />
-
-          <Input
-            value={inputs.group}
-            placeholder={t('分组')}
-            showClear
-            pure
-            size='small'
-            onChange={(value) => handleInputChange(value, 'group')}
-          />
-
-          <Input
-            value={inputs.biz_line}
-            placeholder={t('业务线')}
-            showClear
-            pure
-            size='small'
-            onChange={(value) => handleInputChange(value, 'biz_line')}
-          />
-
-          <Input
-            value={inputs.biz_scene}
-            placeholder={t('业务场景')}
-            showClear
-            pure
-            size='small'
-            onChange={(value) => handleInputChange(value, 'biz_scene')}
           />
         </div>
 

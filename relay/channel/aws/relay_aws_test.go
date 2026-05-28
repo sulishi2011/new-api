@@ -2,13 +2,17 @@ package aws
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/relay/channel/claude"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/aws/aws-sdk-go-v2/service/bedrockruntime"
@@ -122,6 +126,67 @@ func TestNewAwsInvokeContextStreamDoesNotUseRequestTimeout(t *testing.T) {
 
 	_, ok := ctx.Deadline()
 	require.False(t, ok)
+}
+
+func TestFinalizeAwsStreamClientGoneSettlesPartialUsageAfterResponse(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	var responseText strings.Builder
+	responseText.WriteString("partial")
+	info := &relaycommon.RelayInfo{
+		RelayFormat:           types.RelayFormatClaude,
+		IsStream:              true,
+		StartTime:             time.Now().Add(-time.Second),
+		OriginModelName:       "claude-3-5-sonnet-20240620",
+		ReceivedResponseCount: 1,
+		StreamStatus:          relaycommon.NewStreamStatus(),
+		ChannelMeta: &relaycommon.ChannelMeta{
+			UpstreamModelName: "claude-3-5-sonnet-20240620",
+		},
+	}
+	info.SetEstimatePromptTokens(77)
+	info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, context.Canceled)
+	claudeInfo := &claude.ClaudeResponseInfo{
+		Usage: &dto.Usage{
+			PromptTokens:     123,
+			CompletionTokens: 5,
+		},
+		ResponseText: responseText,
+	}
+
+	apiErr, usage := finalizeAwsStreamClientGone(ctx, info, claudeInfo, context.Canceled)
+
+	require.Nil(t, apiErr)
+	require.NotNil(t, usage)
+	require.Equal(t, 123, usage.PromptTokens)
+	require.GreaterOrEqual(t, usage.CompletionTokens, 5)
+	require.Equal(t, "anthropic", usage.UsageSemantic)
+}
+
+func TestFinalizeAwsStreamClientGoneKeepsErrorBeforeResponse(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+	info := &relaycommon.RelayInfo{
+		RelayFormat:  types.RelayFormatClaude,
+		IsStream:     true,
+		StreamStatus: relaycommon.NewStreamStatus(),
+	}
+	claudeInfo := &claude.ClaudeResponseInfo{Usage: &dto.Usage{}}
+
+	apiErr, usage := finalizeAwsStreamClientGone(ctx, info, claudeInfo, context.Canceled)
+
+	require.NotNil(t, apiErr)
+	require.Nil(t, usage)
+	require.Equal(t, types.ErrorCodeChannelResponseTimeExceeded, apiErr.GetErrorCode())
 }
 
 func intPtr(v int) *int {

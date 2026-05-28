@@ -27,7 +27,6 @@ import { useIsMobile } from '../common/useIsMobile';
 import { useMinimumLoadingTime } from '../common/useMinimumLoadingTime';
 
 const createDefaultInputs = () => ({
-  username: '',
   analysis_dimension: 'model_name',
   analysis_metric: 'original_quota',
   model_name: '',
@@ -36,10 +35,6 @@ const createDefaultInputs = () => ({
   end_timestamp: timestamp2string(new Date().getTime() / 1000 + 3600),
   channel: '',
   token_id: '',
-  vendor_profile_id: '',
-  group: '',
-  biz_line: '',
-  biz_scene: '',
   data_export_default_time: '',
 });
 
@@ -119,10 +114,6 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
       { label: t('上游 Key ID'), value: 'provider_key_id' },
       { label: t('渠道 ID'), value: 'channel_id' },
       { label: t('令牌 ID'), value: 'token_id' },
-      { label: t('供应商配置'), value: 'vendor_profile_id' },
-      { label: t('分组'), value: 'group' },
-      { label: t('业务线'), value: 'biz_line' },
-      { label: t('业务场景'), value: 'biz_scene' },
     ],
     [t],
   );
@@ -208,23 +199,23 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
   // ========== API 调用函数 ==========
   const loadQuotaData = useCallback(
     async (overrideInputs, overrideDefaultTime) => {
+      if (!isAdminUser) {
+        setQuotaData([]);
+        return [];
+      }
+
       setLoading(true);
       try {
         const {
           inputs: {
             start_timestamp,
             end_timestamp,
-            username,
             analysis_dimension,
             analysis_metric,
             model_name,
             provider_key_id,
             channel,
             token_id,
-            vendor_profile_id,
-            group,
-            biz_line,
-            biz_scene,
           },
           defaultTime,
         } = resolveSearchParams(overrideInputs, overrideDefaultTime);
@@ -250,62 +241,25 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
         if (token_id) {
           params.set('token_id', token_id);
         }
-        if (vendor_profile_id) {
-          params.set('vendor_profile_id', vendor_profile_id);
-        }
-        if (group) {
-          params.set('group', group);
-        }
-        if (biz_line) {
-          params.set('biz_line', biz_line);
-        }
-        if (biz_scene) {
-          params.set('biz_scene', biz_scene);
-        }
-        if (isAdminUser && username) {
-          params.set('username', username);
-        }
 
-        if (isAdminUser) {
-          const url = `/api/data/?${params.toString()}`;
-          const res = await API.get(url);
-          const { success, message, data } = res.data;
-          if (success) {
-            setQuotaData(data);
-            if (data.length === 0) {
-              data.push({
-                count: 0,
-                model_name: t('无数据'),
-                quota: 0,
-                created_at: now.getTime() / 1000,
-              });
-            }
-            data.sort((a, b) => a.created_at - b.created_at);
-            return data;
-          } else {
-            showError(message);
-            return [];
+        const url = `/api/data/?${params.toString()}`;
+        const res = await API.get(url);
+        const { success, message, data } = res.data;
+        if (success) {
+          setQuotaData(data);
+          if (data.length === 0) {
+            data.push({
+              count: 0,
+              model_name: t('无数据'),
+              quota: 0,
+              created_at: now.getTime() / 1000,
+            });
           }
+          data.sort((a, b) => a.created_at - b.created_at);
+          return data;
         } else {
-          const url = `/api/data/self/?${params.toString()}`;
-          const res = await API.get(url);
-          const { success, message, data } = res.data;
-          if (success) {
-            setQuotaData(data);
-            if (data.length === 0) {
-              data.push({
-                count: 0,
-                model_name: t('无数据'),
-                quota: 0,
-                created_at: now.getTime() / 1000,
-              });
-            }
-            data.sort((a, b) => a.created_at - b.created_at);
-            return data;
-          } else {
-            showError(message);
-            return [];
-          }
+          showError(message);
+          return [];
         }
       } finally {
         setLoading(false);
@@ -333,61 +287,6 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
       setUptimeLoading(false);
     }
   }, [activeUptimeTab]);
-
-  const loadUserQuotaData = useCallback(
-    async (overrideInputs) => {
-      if (!isAdminUser) return [];
-      try {
-        const {
-          inputs: {
-            start_timestamp,
-            end_timestamp,
-            username,
-            model_name,
-            provider_key_id,
-            channel,
-            token_id,
-            analysis_metric,
-          },
-        } = resolveSearchParams(overrideInputs);
-        const localStartTimestamp = Date.parse(start_timestamp) / 1000;
-        const localEndTimestamp = Date.parse(end_timestamp) / 1000;
-        const params = new URLSearchParams({
-          start_timestamp: String(localStartTimestamp),
-          end_timestamp: String(localEndTimestamp),
-          metric: analysis_metric || 'original_quota',
-        });
-        if (username) {
-          params.set('username', username);
-        }
-        if (model_name) {
-          params.set('model_name', model_name);
-        }
-        if (provider_key_id) {
-          params.set('provider_key_id', provider_key_id);
-        }
-        if (channel) {
-          params.set('channel', channel);
-        }
-        if (token_id) {
-          params.set('token_id', token_id);
-        }
-        const url = `/api/data/users?${params.toString()}`;
-        const res = await API.get(url);
-        const { success, message, data } = res.data;
-        if (success) {
-          return data || [];
-        } else {
-          showError(message);
-          return [];
-        }
-      } catch (err) {
-        console.error(err);
-        return [];
-      }
-    },
-    [isAdminUser, resolveSearchParams],
-  );
 
   const getUserData = useCallback(async () => {
     let res = await API.get(`/api/user/self`);
@@ -502,7 +401,6 @@ export const useDashboardData = (userState, userDispatch, statusState) => {
     // 函数
     handleInputChange,
     loadQuotaData,
-    loadUserQuotaData,
     loadUptimeData,
     getUserData,
     refresh,

@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relay/channel"
 	"github.com/QuantumNous/new-api/relay/channel/claude"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -336,7 +337,7 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 			err := c.Request.Context().Err()
 			info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonClientGone, err)
 			closeStream()
-			return types.NewError(err, types.ErrorCodeChannelResponseTimeExceeded), nil
+			return finalizeAwsStreamClientGone(c, info, claudeInfo, err)
 		case event, ok := <-events:
 			if !ok {
 				info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonEOF, nil)
@@ -363,6 +364,28 @@ func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (
 			}
 		}
 	}
+}
+
+func finalizeAwsStreamClientGone(c *gin.Context, info *relaycommon.RelayInfo, claudeInfo *claude.ClaudeResponseInfo, err error) (*types.NewAPIError, *dto.Usage) {
+	if info == nil || claudeInfo == nil {
+		return types.NewError(err, types.ErrorCodeChannelResponseTimeExceeded), nil
+	}
+	if shouldSettleAwsStreamClientGone(c, info) {
+		claude.HandleStreamFinalResponse(c, info, claudeInfo)
+		logger.LogInfo(c, fmt.Sprintf("aws stream client canceled after response started; settling partial usage: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+		return nil, claudeInfo.Usage
+	}
+	return types.NewError(err, types.ErrorCodeChannelResponseTimeExceeded), nil
+}
+
+func shouldSettleAwsStreamClientGone(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	if info != nil && info.ReceivedResponseCount > 0 {
+		return true
+	}
+	if c == nil || c.Writer == nil {
+		return false
+	}
+	return c.Writer.Written()
 }
 
 // Nova模型处理函数

@@ -88,22 +88,14 @@ const Dashboard = () => {
   );
 
   // ========== 数据处理 ==========
-  const loadUserData = async (overrideInputs) => {
-    if (dashboardData.isAdminUser) {
-      const userData = await dashboardData.loadUserQuotaData(overrideInputs);
-      if (userData && userData.length > 0) {
-        dashboardCharts.updateUserChartData(userData);
-      }
-    }
-  };
-
   const initChart = async () => {
-    await dashboardData.loadQuotaData().then((data) => {
-      if (data && data.length > 0) {
-        dashboardCharts.updateChartData(data);
-      }
-    });
-    await loadUserData();
+    if (dashboardData.isAdminUser) {
+      await dashboardData.loadQuotaData().then((data) => {
+        if (data && data.length > 0) {
+          dashboardCharts.updateChartData(data);
+        }
+      });
+    }
     await dashboardData.loadUptimeData();
   };
 
@@ -112,12 +104,10 @@ const Dashboard = () => {
     if (data && data.length > 0) {
       dashboardCharts.updateChartData(data);
     }
-    await loadUserData();
   };
 
   const handleSearchConfirm = async () => {
     await dashboardData.handleSearchConfirm(dashboardCharts.updateChartData);
-    await loadUserData();
   };
 
   const handleResetFilters = async () => {
@@ -127,7 +117,6 @@ const Dashboard = () => {
       nextState.inputs,
       nextState.dataExportDefaultTime,
     );
-    await loadUserData(nextState.inputs);
   };
 
   // ========== 数据准备 ==========
@@ -156,6 +145,7 @@ const Dashboard = () => {
       label: dashboardData.t(info.label),
     }),
   );
+  const showDashboardCharts = dashboardData.isAdminUser;
 
   // ========== Effects ==========
   useEffect(() => {
@@ -171,19 +161,20 @@ const Dashboard = () => {
         loading={dashboardData.loading}
       />
 
-      <DashboardFilters
-        isAdminUser={dashboardData.isAdminUser}
-        inputs={dashboardData.inputs}
-        dataExportDefaultTime={dashboardData.dataExportDefaultTime}
-        timeOptions={dashboardData.timeOptions}
-        dimensionOptions={dashboardData.dimensionOptions}
-        metricOptions={dashboardData.metricOptions}
-        handleInputChange={dashboardData.handleInputChange}
-        handleSearch={handleSearchConfirm}
-        handleReset={handleResetFilters}
-        loading={dashboardData.loading}
-        t={dashboardData.t}
-      />
+      {dashboardData.isAdminUser && (
+        <DashboardFilters
+          inputs={dashboardData.inputs}
+          dataExportDefaultTime={dashboardData.dataExportDefaultTime}
+          timeOptions={dashboardData.timeOptions}
+          dimensionOptions={dashboardData.dimensionOptions}
+          metricOptions={dashboardData.metricOptions}
+          handleInputChange={dashboardData.handleInputChange}
+          handleSearch={handleSearchConfirm}
+          handleReset={handleResetFilters}
+          loading={dashboardData.loading}
+          t={dashboardData.t}
+        />
+      )}
 
       <StatsCards
         groupedStatsData={groupedStatsData}
@@ -196,26 +187,25 @@ const Dashboard = () => {
       {/* API信息和图表面板 */}
       <div className='mb-4'>
         <div
-          className={`grid grid-cols-1 gap-4 ${dashboardData.hasApiInfoPanel ? 'lg:grid-cols-4' : ''}`}
+          className={`grid grid-cols-1 gap-4 ${showDashboardCharts && dashboardData.hasApiInfoPanel ? 'lg:grid-cols-4' : ''}`}
         >
-          <ChartsPanel
-            activeChartTab={dashboardData.activeChartTab}
-            setActiveChartTab={dashboardData.setActiveChartTab}
-            spec_line={dashboardCharts.spec_line}
-            spec_model_line={dashboardCharts.spec_model_line}
-            spec_pie={dashboardCharts.spec_pie}
-            spec_rank_bar={dashboardCharts.spec_rank_bar}
-            spec_user_rank={dashboardCharts.spec_user_rank}
-            spec_user_trend={dashboardCharts.spec_user_trend}
-            isAdminUser={dashboardData.isAdminUser}
-            analysisDimensionLabel={dashboardData.analysisDimensionLabel}
-            analysisMetricLabel={dashboardData.analysisMetricLabel}
-            CARD_PROPS={CARD_PROPS}
-            CHART_CONFIG={CHART_CONFIG}
-            FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
-            hasApiInfoPanel={dashboardData.hasApiInfoPanel}
-            t={dashboardData.t}
-          />
+          {showDashboardCharts && (
+            <ChartsPanel
+              activeChartTab={dashboardData.activeChartTab}
+              setActiveChartTab={dashboardData.setActiveChartTab}
+              spec_line={dashboardCharts.spec_line}
+              spec_model_line={dashboardCharts.spec_model_line}
+              spec_pie={dashboardCharts.spec_pie}
+              spec_rank_bar={dashboardCharts.spec_rank_bar}
+              analysisDimensionLabel={dashboardData.analysisDimensionLabel}
+              analysisMetricLabel={dashboardData.analysisMetricLabel}
+              CARD_PROPS={CARD_PROPS}
+              CHART_CONFIG={CHART_CONFIG}
+              FLEX_CENTER_GAP2={FLEX_CENTER_GAP2}
+              hasApiInfoPanel={dashboardData.hasApiInfoPanel}
+              t={dashboardData.t}
+            />
+          )}
 
           {dashboardData.hasApiInfoPanel && (
             <ApiInfoPanel

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/types"
@@ -243,4 +245,76 @@ func TestNewDoRequestError_ContextCanceledSkipsRetry(t *testing.T) {
 	require.Equal(t, types.ErrorCodeDoRequestFailed, apiErr.GetErrorCode())
 	require.Equal(t, 499, apiErr.StatusCode)
 	require.True(t, types.IsSkipRetryError(apiErr))
+}
+
+func TestDoRequest_StreamResponseHeaderTimeoutBudgetIsPerAttempt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.ResetProxyClientCache()
+	t.Cleanup(service.ResetProxyClientCache)
+
+	newDelayedHeaderServer := func(delay time.Duration) *httptest.Server {
+		return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			time.Sleep(delay)
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+		}))
+	}
+
+	firstUpstream := newDelayedHeaderServer(1200 * time.Millisecond)
+	defer firstUpstream.Close()
+	secondUpstream := newDelayedHeaderServer(1200 * time.Millisecond)
+	defer secondUpstream.Close()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	firstReq, err := http.NewRequest(http.MethodPost, firstUpstream.URL, strings.NewReader(""))
+	require.NoError(t, err)
+	firstTimeout := 1
+	firstEnabled := true
+	firstInfo := &relaycommon.RelayInfo{
+		IsStream:    true,
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelSetting: dto.ChannelSettings{
+				StreamResponseHeaderTimeoutEnabled: &firstEnabled,
+				StreamResponseHeaderTimeoutSeconds: &firstTimeout,
+			},
+		},
+	}
+	firstStart := time.Now()
+	firstResp, err := doRequest(c, firstReq, firstInfo)
+	require.Nil(t, firstResp)
+	require.Error(t, err)
+	require.GreaterOrEqual(t, time.Since(firstStart), 900*time.Millisecond)
+
+	var firstAPIErr *types.NewAPIError
+	require.ErrorAs(t, err, &firstAPIErr)
+	require.Equal(t, types.ErrorCodeStreamResponseHeaderTimeout, firstAPIErr.GetErrorCode())
+
+	secondReq, err := http.NewRequest(http.MethodPost, secondUpstream.URL, strings.NewReader(""))
+	require.NoError(t, err)
+	secondTimeout := 2
+	secondEnabled := true
+	secondInfo := &relaycommon.RelayInfo{
+		IsStream:    true,
+		DisablePing: true,
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelSetting: dto.ChannelSettings{
+				StreamResponseHeaderTimeoutEnabled: &secondEnabled,
+				StreamResponseHeaderTimeoutSeconds: &secondTimeout,
+			},
+		},
+	}
+	secondStart := time.Now()
+	secondResp, err := doRequest(c, secondReq, secondInfo)
+	require.NoError(t, err)
+	require.NotNil(t, secondResp)
+	defer secondResp.Body.Close()
+	require.Equal(t, http.StatusOK, secondResp.StatusCode)
+	require.GreaterOrEqual(t, time.Since(secondStart), time.Second)
 }

@@ -1,6 +1,8 @@
 package openai
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -513,7 +515,11 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 	})
 
 	if streamErr != nil {
-		return nil, streamErr
+		if shouldSettleChatViaResponsesClientGone(c, info, streamErr, sentStart) {
+			logger.LogInfo(c, fmt.Sprintf("responses stream client canceled after response started; settling partial usage: %s, received=%d", info.StreamStatus.Summary(), info.ReceivedResponseCount))
+		} else {
+			return nil, streamErr
+		}
 	}
 
 	if usage.TotalTokens == 0 {
@@ -522,7 +528,9 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 
 	if !sentStart {
 		if !sendChatChunk(helper.GenerateStartEmptyResponse(responseId, createAt, model, nil)) {
-			return nil, streamErr
+			if !shouldSettleChatViaResponsesClientGone(c, info, streamErr, sentStart) {
+				return nil, streamErr
+			}
 		}
 	}
 	if !sentStop {
@@ -535,12 +543,17 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		}
 		stop := helper.GenerateStopResponse(responseId, createAt, model, finishReason)
 		if !sendChatChunk(stop) {
-			return nil, streamErr
+			if !shouldSettleChatViaResponsesClientGone(c, info, streamErr, sentStart) {
+				return nil, streamErr
+			}
 		}
 	}
 	if info.RelayFormat == types.RelayFormatOpenAI && info.ShouldIncludeUsage && usage != nil {
 		if err := helper.ObjectData(c, helper.GenerateFinalUsageResponse(responseId, createAt, model, *usage)); err != nil {
-			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			writeErr := types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			if !shouldSettleChatViaResponsesClientGone(c, info, writeErr, sentStart) {
+				return nil, writeErr
+			}
 		}
 	}
 
@@ -548,4 +561,23 @@ func OaiResponsesToChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo
 		helper.Done(c)
 	}
 	return usage, nil
+}
+
+func shouldSettleChatViaResponsesClientGone(c *gin.Context, info *relaycommon.RelayInfo, err *types.NewAPIError, sentStart bool) bool {
+	if err == nil {
+		return false
+	}
+	if !errors.Is(err, context.Canceled) {
+		return false
+	}
+	if sentStart {
+		return true
+	}
+	if info != nil && info.ReceivedResponseCount > 0 {
+		return true
+	}
+	if c == nil || c.Writer == nil {
+		return false
+	}
+	return c.Writer.Written()
 }

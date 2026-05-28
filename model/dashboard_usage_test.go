@@ -1,8 +1,10 @@
 package model
 
 import (
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -14,6 +16,7 @@ func setupDashboardUsageTestDB(t *testing.T) *gorm.DB {
 
 	oldDB := DB
 	oldLogDB := LOG_DB
+	oldLogReadDB := LOG_READ_DB
 	oldUsingSQLite := common.UsingSQLite
 	oldUsingMySQL := common.UsingMySQL
 	oldUsingPostgreSQL := common.UsingPostgreSQL
@@ -29,6 +32,7 @@ func setupDashboardUsageTestDB(t *testing.T) *gorm.DB {
 	}
 	DB = db
 	LOG_DB = db
+	LOG_READ_DB = db
 
 	if err := db.AutoMigrate(&Log{}); err != nil {
 		t.Fatalf("failed to migrate log table: %v", err)
@@ -37,6 +41,7 @@ func setupDashboardUsageTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		DB = oldDB
 		LOG_DB = oldLogDB
+		LOG_READ_DB = oldLogReadDB
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
 		common.UsingPostgreSQL = oldUsingPostgreSQL
@@ -47,6 +52,69 @@ func setupDashboardUsageTestDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+func TestGetDashboardUserQuotaDataFallsBackToPrimaryOnReadReplicaRecoveryConflict(t *testing.T) {
+	db := setupDashboardUsageTestDB(t)
+
+	logs := []*Log{
+		{
+			UserId:           1,
+			Username:         "alice",
+			CreatedAt:        14401,
+			Type:             LogTypeConsume,
+			ModelName:        "gpt-4",
+			Quota:            18,
+			PromptTokens:     6,
+			CompletionTokens: 4,
+		},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatalf("failed to seed primary logs: %v", err)
+	}
+
+	readDB, err := gorm.Open(sqlite.Open("file:"+strings.ReplaceAll(t.Name(), "/", "_")+"_read?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("failed to open read sqlite db: %v", err)
+	}
+	readDB.Callback().Query().Before("gorm:query").Register("dashboard_usage_recovery_conflict", func(tx *gorm.DB) {
+		tx.AddError(errors.New("ERROR: canceling statement due to conflict with recovery (SQLSTATE 40001)"))
+	})
+	LOG_READ_DB = readDB
+	t.Cleanup(func() {
+		sqlDB, err := readDB.DB()
+		if err == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	rows, err := GetDashboardUserQuotaData(DashboardUsageQuery{
+		StartTimestamp: 14400,
+		EndTimestamp:   14500,
+	})
+	if err != nil {
+		t.Fatalf("expected primary fallback to succeed, got error: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row from primary fallback, got %d", len(rows))
+	}
+	if rows[0].Username != "alice" || rows[0].Quota != 18 || rows[0].TokenUsed != 10 {
+		t.Fatalf("unexpected fallback row: %#v", rows[0])
+	}
+}
+
+func enableDashboardAggregateTestTables(t *testing.T, db *gorm.DB) {
+	t.Helper()
+
+	oldUsageAggregationEnabled := common.UsageAggregationEnabled
+	common.UsageAggregationEnabled = true
+	t.Cleanup(func() {
+		common.UsageAggregationEnabled = oldUsageAggregationEnabled
+	})
+
+	if err := db.AutoMigrate(&UsageLedger{}, &UsageAggregateHourly{}); err != nil {
+		t.Fatalf("failed to migrate usage aggregate tables: %v", err)
+	}
 }
 
 func TestGetDashboardQuotaDataGroupsByProviderKeyID(t *testing.T) {
@@ -120,6 +188,110 @@ func TestGetDashboardQuotaDataGroupsByProviderKeyID(t *testing.T) {
 	}
 	if rowMap["202"] == nil || rowMap["202"].CreatedAt != 3600 || rowMap["202"].Count != 1 || rowMap["202"].Quota != 30 || rowMap["202"].TokenUsed != 24 {
 		t.Fatalf("unexpected row for provider key 202: %#v", rowMap["202"])
+	}
+}
+
+func TestGetDashboardQuotaDataUsesHourlyAggregateTable(t *testing.T) {
+	db := setupDashboardUsageTestDB(t)
+	enableDashboardAggregateTestTables(t, db)
+
+	bucketStart := time.Unix(common.GetTimestamp(), 0).UTC().Truncate(time.Hour).Add(-3 * time.Hour).Unix()
+	aggregates := []*UsageAggregateHourly{
+		{
+			BucketStart:    bucketStart,
+			RequestedModel: "gpt-4",
+			RequestCount:   2,
+			Quota:          30,
+			TotalTokens:    70,
+		},
+		{
+			BucketStart:    bucketStart,
+			RequestedModel: "gpt-4o",
+			RequestCount:   1,
+			Quota:          12,
+			TotalTokens:    20,
+		},
+	}
+	if err := db.Create(&aggregates).Error; err != nil {
+		t.Fatalf("failed to seed hourly aggregates: %v", err)
+	}
+
+	rows, err := GetDashboardQuotaData(DashboardUsageQuery{
+		StartTimestamp: bucketStart,
+		EndTimestamp:   bucketStart + usageAggregateHourSeconds - 1,
+		Dimension:      DashboardDimensionModel,
+		Metric:         DashboardMetricOriginal,
+		Granularity:    UsageAggregateGranularityHour,
+	})
+	if err != nil {
+		t.Fatalf("failed to query dashboard aggregate usage data: %v", err)
+	}
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 aggregate rows, got %d", len(rows))
+	}
+	rowMap := make(map[string]*QuotaData, len(rows))
+	for _, row := range rows {
+		rowMap[row.ModelName] = row
+	}
+	if rowMap["gpt-4"] == nil || rowMap["gpt-4"].CreatedAt != bucketStart || rowMap["gpt-4"].Count != 2 || rowMap["gpt-4"].Quota != 30 || rowMap["gpt-4"].TokenUsed != 70 {
+		t.Fatalf("unexpected aggregate row for gpt-4: %#v", rowMap["gpt-4"])
+	}
+	if rowMap["gpt-4o"] == nil || rowMap["gpt-4o"].CreatedAt != bucketStart || rowMap["gpt-4o"].Count != 1 || rowMap["gpt-4o"].Quota != 12 || rowMap["gpt-4o"].TokenUsed != 20 {
+		t.Fatalf("unexpected aggregate row for gpt-4o: %#v", rowMap["gpt-4o"])
+	}
+}
+
+func TestGetDashboardQuotaDataMergesHourlyAggregateAndLedgerRows(t *testing.T) {
+	db := setupDashboardUsageTestDB(t)
+	enableDashboardAggregateTestTables(t, db)
+
+	now := time.Unix(common.GetTimestamp(), 0).UTC()
+	aggregateBucket := now.Truncate(time.Hour).Add(-3 * time.Hour).Unix()
+	recentTimestamp := now.Add(-20 * time.Minute).Unix()
+	recentBucket := UsageAggregateHourBucket(recentTimestamp)
+
+	aggregate := &UsageAggregateHourly{
+		BucketStart:    aggregateBucket,
+		RequestedModel: "gpt-4",
+		RequestCount:   2,
+		Quota:          30,
+		TotalTokens:    70,
+	}
+	if err := db.Create(aggregate).Error; err != nil {
+		t.Fatalf("failed to seed hourly aggregate: %v", err)
+	}
+
+	ledger := &UsageLedger{
+		Timestamp:      recentTimestamp,
+		RequestedModel: "gpt-4",
+		Quota:          11,
+		TotalTokens:    13,
+	}
+	if err := db.Create(ledger).Error; err != nil {
+		t.Fatalf("failed to seed usage ledger: %v", err)
+	}
+
+	rows, err := GetDashboardQuotaData(DashboardUsageQuery{
+		StartTimestamp: aggregateBucket,
+		EndTimestamp:   recentTimestamp,
+		Dimension:      DashboardDimensionModel,
+		Metric:         DashboardMetricOriginal,
+		Granularity:    UsageAggregateGranularityHour,
+	})
+	if err != nil {
+		t.Fatalf("failed to query merged dashboard usage data: %v", err)
+	}
+
+	rowMap := make(map[int64]*QuotaData, len(rows))
+	for _, row := range rows {
+		rowMap[row.CreatedAt] = row
+	}
+	if rowMap[aggregateBucket] == nil || rowMap[aggregateBucket].Count != 2 || rowMap[aggregateBucket].Quota != 30 || rowMap[aggregateBucket].TokenUsed != 70 {
+		t.Fatalf("unexpected aggregate bucket row: %#v", rowMap[aggregateBucket])
+	}
+	if rowMap[recentBucket] == nil || rowMap[recentBucket].Count != 1 || rowMap[recentBucket].Quota != 11 || rowMap[recentBucket].TokenUsed != 13 {
+		t.Fatalf("unexpected recent ledger bucket row: %#v", rowMap[recentBucket])
 	}
 }
 

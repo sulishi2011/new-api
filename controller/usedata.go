@@ -24,6 +24,7 @@ func GetAllQuotaDates(c *gin.Context) {
 	bizScene := c.Query("biz_scene")
 	dimension := c.Query("dimension")
 	metric := c.Query("metric")
+	granularity := c.Query("default_time")
 	dates, err := model.GetDashboardQuotaData(model.DashboardUsageQuery{
 		Username:        username,
 		StartTimestamp:  startTimestamp,
@@ -38,6 +39,7 @@ func GetAllQuotaDates(c *gin.Context) {
 		BizScene:        bizScene,
 		Dimension:       model.DashboardDimension(dimension),
 		Metric:          model.DashboardMetric(metric),
+		Granularity:     granularity,
 	})
 	if err != nil {
 		common.ApiError(c, err)
