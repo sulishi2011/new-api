@@ -70,17 +70,18 @@ const toPickerDate = (value) =>
   );
 
 const getDefaultDayRange = () => {
-  const end = dayjs.utc().add(1, 'day').startOf('day');
+  const end = dayjs().add(1, 'day').startOf('day');
   return [toPickerDate(end.subtract(30, 'day')), toPickerDate(end)];
 };
 
 const getDefaultHourRange = () => {
-  const end = dayjs.utc().startOf('hour');
+  const end = dayjs().startOf('hour');
   return [toPickerDate(end.subtract(24, 'hour')), toPickerDate(end)];
 };
 
 const createDefaultFilters = () => ({
   granularity: 'day',
+  groupBy: 'channel',
   dateRange: getDefaultDayRange(),
   channel_id: '',
   provider_key_id: '',
@@ -96,30 +97,35 @@ const normalizePickerDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const pickerDateToUtcTimestamp = (value) => {
+const pickerDateToTimestamp = (value) => {
   const date = normalizePickerDate(value);
   if (!date) return 0;
-  return Math.floor(
-    Date.UTC(
-      date.getFullYear(),
-      date.getMonth(),
-      date.getDate(),
-      date.getHours(),
-      date.getMinutes(),
-      date.getSeconds(),
-    ) / 1000,
-  );
+  return Math.floor(date.getTime() / 1000);
 };
 
-const formatBucket = (timestamp, granularity) => {
+const getLocalTimezoneOffsetSeconds = () =>
+  -new Date().getTimezoneOffset() * 60;
+
+const formatTimezoneOffsetLabel = (offsetSeconds) => {
+  if (!offsetSeconds) return 'UTC';
+
+  const sign = offsetSeconds >= 0 ? '+' : '-';
+  const absolute = Math.abs(offsetSeconds);
+  const hours = Math.floor(absolute / 3600);
+  const minutes = Math.floor((absolute % 3600) / 60);
+
+  return `UTC${sign}${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const formatBucket = (timestamp, granularity, timezoneOffsetSeconds) => {
   if (!timestamp) return '-';
-  const start = dayjs.unix(timestamp).utc();
+  const start = dayjs.unix(timestamp + timezoneOffsetSeconds).utc();
   if (!start.isValid()) return '-';
   const end = start.add(1, granularity === 'hour' ? 'hour' : 'day');
   const endText = start.isSame(end, 'day')
     ? end.format('HH:mm')
     : end.format('YYYY-MM-DD HH:mm');
-  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} UTC`;
+  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} ${formatTimezoneOffsetLabel(timezoneOffsetSeconds)}`;
 };
 
 const parseNumericFilter = (value) => {
@@ -145,6 +151,7 @@ const getCsvFilename = (headers, fallback) => {
 const UsageAggregate = () => {
   const { t } = useTranslation();
   const isMobile = useIsMobile();
+  const timezoneOffsetSeconds = getLocalTimezoneOffsetSeconds();
 
   const [filters, setFilters] = useState(createDefaultFilters);
   const [appliedFilters, setAppliedFilters] = useState(createDefaultFilters);
@@ -168,9 +175,17 @@ const UsageAggregate = () => {
     [t],
   );
 
+  const groupByOptions = useMemo(
+    () => [
+      { label: t('渠道'), value: 'channel' },
+      { label: t('详情'), value: 'detail' },
+    ],
+    [t],
+  );
+
   const dateRangePresets = useMemo(() => {
     if (filters.granularity === 'hour') {
-      const end = dayjs.utc().startOf('hour');
+      const end = dayjs().startOf('hour');
       return [
         {
           text: t('近 24 小时'),
@@ -184,7 +199,7 @@ const UsageAggregate = () => {
         },
       ];
     }
-    const end = dayjs.utc().add(1, 'day').startOf('day');
+    const end = dayjs().add(1, 'day').startOf('day');
     return [
       {
         text: t('近 7 天'),
@@ -216,8 +231,10 @@ const UsageAggregate = () => {
     const params = new URLSearchParams();
     const range = appliedFilters.dateRange || [];
     params.set('granularity', appliedFilters.granularity);
-    params.set('start_timestamp', String(pickerDateToUtcTimestamp(range[0])));
-    params.set('end_timestamp', String(pickerDateToUtcTimestamp(range[1])));
+    params.set('group_by', appliedFilters.groupBy);
+    params.set('timezone_offset', String(timezoneOffsetSeconds));
+    params.set('start_timestamp', String(pickerDateToTimestamp(range[0])));
+    params.set('end_timestamp', String(pickerDateToTimestamp(range[1])));
     params.set('sort_by', sortBy);
     params.set('sort_order', sortOrder);
     if (!exportMode) {
@@ -259,6 +276,7 @@ const UsageAggregate = () => {
         nextItems.map((item, index) => ({
           ...item,
           key: [
+            appliedFilters.groupBy,
             item.bucket_start,
             item.channel_id,
             item.provider_key_id,
@@ -403,14 +421,15 @@ const UsageAggregate = () => {
     );
   };
 
-  const columns = [
+  const primaryColumns = [
     {
       title: sortableTitle(t('时间'), 'bucket_start'),
       dataIndex: 'bucket_start',
       key: 'bucket_start',
       width: 260,
       fixed: 'left',
-      render: (value) => formatBucket(value, appliedFilters.granularity),
+      render: (value) =>
+        formatBucket(value, appliedFilters.granularity, timezoneOffsetSeconds),
     },
     {
       title: t('渠道'),
@@ -426,54 +445,63 @@ const UsageAggregate = () => {
         </Space>
       ),
     },
-    {
-      title: t('上游 Key'),
-      dataIndex: 'provider_key_id',
-      key: 'provider_key_id',
-      width: 190,
-      render: (_, record) =>
-        record.provider_key_id ? (
-          <div style={{ lineHeight: 1.5 }}>
-            <Text>#{record.provider_key_id}</Text>
-            <div className='text-xs text-[var(--semi-color-text-2)]'>
-              {record.provider_key_preview || '-'}
-            </div>
-          </div>
-        ) : (
-          '-'
-        ),
-    },
-    {
-      title: t('令牌'),
-      dataIndex: 'token_id',
-      key: 'token_id',
-      width: 170,
-      render: (_, record) => (
-        <div style={{ lineHeight: 1.5 }}>
-          <Text>#{record.token_id || 0}</Text>
-          <div className='text-xs text-[var(--semi-color-text-2)]'>
-            {record.token_name || '-'}
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: t('模型'),
-      dataIndex: 'requested_model',
-      key: 'model',
-      width: 220,
-      render: (_, record) => (
-        <div style={{ lineHeight: 1.5, wordBreak: 'break-all' }}>
-          <Text>{record.requested_model || '-'}</Text>
-          {record.actual_model &&
-          record.actual_model !== record.requested_model ? (
-            <div className='text-xs text-[var(--semi-color-text-2)]'>
-              {t('实际')}: {record.actual_model}
-            </div>
-          ) : null}
-        </div>
-      ),
-    },
+  ];
+
+  const detailColumns =
+    appliedFilters.groupBy === 'detail'
+      ? [
+          {
+            title: t('上游 Key'),
+            dataIndex: 'provider_key_id',
+            key: 'provider_key_id',
+            width: 190,
+            render: (_, record) =>
+              record.provider_key_id ? (
+                <div style={{ lineHeight: 1.5 }}>
+                  <Text>#{record.provider_key_id}</Text>
+                  <div className='text-xs text-[var(--semi-color-text-2)]'>
+                    {record.provider_key_preview || '-'}
+                  </div>
+                </div>
+              ) : (
+                '-'
+              ),
+          },
+          {
+            title: t('令牌'),
+            dataIndex: 'token_id',
+            key: 'token_id',
+            width: 170,
+            render: (_, record) => (
+              <div style={{ lineHeight: 1.5 }}>
+                <Text>#{record.token_id || 0}</Text>
+                <div className='text-xs text-[var(--semi-color-text-2)]'>
+                  {record.token_name || '-'}
+                </div>
+              </div>
+            ),
+          },
+          {
+            title: t('模型'),
+            dataIndex: 'requested_model',
+            key: 'model',
+            width: 220,
+            render: (_, record) => (
+              <div style={{ lineHeight: 1.5, wordBreak: 'break-all' }}>
+                <Text>{record.requested_model || '-'}</Text>
+                {record.actual_model &&
+                record.actual_model !== record.requested_model ? (
+                  <div className='text-xs text-[var(--semi-color-text-2)]'>
+                    {t('实际')}: {record.actual_model}
+                  </div>
+                ) : null}
+              </div>
+            ),
+          },
+        ]
+      : [];
+
+  const metricColumns = [
     {
       title: sortableTitle(t('请求数'), 'request_count'),
       dataIndex: 'request_count',
@@ -532,6 +560,8 @@ const UsageAggregate = () => {
     },
   ];
 
+  const columns = [...primaryColumns, ...detailColumns, ...metricColumns];
+
   return (
     <div className='mt-[60px] px-2'>
       <CardPro
@@ -543,7 +573,7 @@ const UsageAggregate = () => {
                 <TableProperties size={18} />
                 <Text strong>{t('用量汇总')}</Text>
                 <Tag color='grey' shape='circle'>
-                  UTC
+                  {formatTimezoneOffsetLabel(timezoneOffsetSeconds)}
                 </Tag>
               </div>
               <Space wrap>
@@ -583,7 +613,7 @@ const UsageAggregate = () => {
         }
         searchArea={
           <div className='flex flex-col gap-2'>
-            <div className='grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4'>
+            <div className='grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-5'>
               <Select
                 value={filters.granularity}
                 optionList={granularityOptions}
@@ -592,11 +622,19 @@ const UsageAggregate = () => {
                 size='small'
                 onChange={handleGranularityChange}
               />
+              <Select
+                value={filters.groupBy}
+                optionList={groupByOptions}
+                placeholder={t('模式')}
+                pure
+                size='small'
+                onChange={(value) => updateFilter('groupBy', value)}
+              />
               <div className='md:col-span-1 xl:col-span-2'>
                 <DatePicker
                   value={filters.dateRange}
                   type='dateTimeRange'
-                  placeholder={[t('开始时间 UTC'), t('结束时间 UTC')]}
+                  placeholder={[t('开始时间'), t('结束时间')]}
                   showClear
                   pure
                   size='small'
@@ -648,7 +686,7 @@ const UsageAggregate = () => {
             </div>
             <div className='flex flex-col gap-2 md:flex-row md:items-center md:justify-between'>
               <Text type='tertiary' size='small'>
-                {t('时间选择按 UTC 解释，结束时间为左闭右开区间。')}
+                {t('本地')} {formatTimezoneOffsetLabel(timezoneOffsetSeconds)}
               </Text>
               <Space wrap>
                 <Button

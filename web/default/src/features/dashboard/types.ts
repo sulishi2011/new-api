@@ -34,6 +34,7 @@ export interface QuotaDataItem {
 }
 
 export type UsageAggregateGranularity = 'hour' | 'day'
+export type UsageAggregateGroupBy = 'detail' | 'channel'
 
 export interface UsageAggregateRow {
   bucket_start: number
@@ -71,7 +72,9 @@ export interface UsageAggregateQueryParams {
   p?: number
   page_size?: number
   granularity?: UsageAggregateGranularity
+  group_by?: UsageAggregateGroupBy
   live?: boolean
+  timezone_offset?: number
   start_timestamp?: number
   end_timestamp?: number
   channel_id?: number

@@ -20,8 +20,14 @@ const (
 var (
 	ensuredLogTables sync.Map
 
-	ErrLogCrossMonthQuery = errors.New("日志分表后暂不支持跨月查询，请选择同一个月份的时间范围")
+	ErrLogCrossMonthQuery = errors.New("日志分表后最多支持跨 2 张连续月表查询，请缩小时间范围")
 )
+
+type logReadTableRange struct {
+	TableName      string
+	StartTimestamp int64
+	EndTimestamp   int64
+}
 
 func createLog(log *Log) error {
 	if log == nil {
@@ -53,28 +59,14 @@ func logTableNameForID(logID int64) string {
 }
 
 func resolveLogReadTable(startTimestamp int64, endTimestamp int64) (string, error) {
-	now := common.GetTimestamp()
-	var timestamp int64
-	switch {
-	case startTimestamp == 0 && endTimestamp == 0:
-		timestamp = now
-	case startTimestamp != 0 && endTimestamp != 0:
-		if logMonthKey(startTimestamp) != logMonthKey(endTimestamp) {
-			return "", ErrLogCrossMonthQuery
-		}
-		timestamp = startTimestamp
-	case startTimestamp != 0:
-		if logMonthKey(startTimestamp) != logMonthKey(now) {
-			return "", ErrLogCrossMonthQuery
-		}
-		timestamp = startTimestamp
-	default:
-		if logMonthKey(endTimestamp) != logMonthKey(now) {
-			return "", ErrLogCrossMonthQuery
-		}
-		timestamp = endTimestamp
+	ranges, err := resolveLogReadTableRanges(startTimestamp, endTimestamp)
+	if err != nil {
+		return "", err
 	}
-	return existingLogReadTable(logTableNameForTimestamp(timestamp)), nil
+	if len(ranges) != 1 {
+		return "", ErrLogCrossMonthQuery
+	}
+	return ranges[0].TableName, nil
 }
 
 func resolveLogReadTableForID(logID int64) string {
@@ -112,6 +104,82 @@ func logMonthKey(timestamp int64) string {
 		timestamp = common.GetTimestamp()
 	}
 	return time.Unix(timestamp, 0).UTC().Format("200601")
+}
+
+func logMonthStart(timestamp int64) time.Time {
+	if timestamp <= 0 {
+		timestamp = common.GetTimestamp()
+	}
+	t := time.Unix(timestamp, 0).UTC()
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
+func buildBoundedLogReadTableRanges(startTimestamp int64, endTimestamp int64) ([]logReadTableRange, error) {
+	if endTimestamp < startTimestamp {
+		return []logReadTableRange{{
+			TableName:      existingLogReadTable(logTableNameForTimestamp(startTimestamp)),
+			StartTimestamp: startTimestamp,
+			EndTimestamp:   endTimestamp,
+		}}, nil
+	}
+
+	startMonth := logMonthStart(startTimestamp)
+	endMonth := logMonthStart(endTimestamp)
+	ranges := make([]logReadTableRange, 0, 2)
+	for monthStart := startMonth; !monthStart.After(endMonth); monthStart = monthStart.AddDate(0, 1, 0) {
+		if len(ranges) >= 2 {
+			return nil, ErrLogCrossMonthQuery
+		}
+		nextMonthStart := monthStart.AddDate(0, 1, 0).Unix()
+		rangeStart := monthStart.Unix()
+		if rangeStart < startTimestamp {
+			rangeStart = startTimestamp
+		}
+		rangeEnd := nextMonthStart - 1
+		if rangeEnd > endTimestamp {
+			rangeEnd = endTimestamp
+		}
+		tableName := existingLogReadTable(logTablePrefix + monthStart.Format("200601"))
+		ranges = append(ranges, logReadTableRange{
+			TableName:      tableName,
+			StartTimestamp: rangeStart,
+			EndTimestamp:   rangeEnd,
+		})
+	}
+	return ranges, nil
+}
+
+func resolveLogReadTableRanges(startTimestamp int64, endTimestamp int64) ([]logReadTableRange, error) {
+	now := common.GetTimestamp()
+	switch {
+	case startTimestamp == 0 && endTimestamp == 0:
+		return []logReadTableRange{{
+			TableName: existingLogReadTable(logTableNameForTimestamp(now)),
+		}}, nil
+	case startTimestamp != 0 && endTimestamp != 0:
+		return buildBoundedLogReadTableRanges(startTimestamp, endTimestamp)
+	case startTimestamp != 0:
+		effectiveEnd := now
+		if startTimestamp > effectiveEnd {
+			effectiveEnd = startTimestamp
+		}
+		ranges, err := buildBoundedLogReadTableRanges(startTimestamp, effectiveEnd)
+		if err != nil {
+			return nil, err
+		}
+		if len(ranges) > 0 {
+			ranges[len(ranges)-1].EndTimestamp = 0
+		}
+		return ranges, nil
+	default:
+		if logMonthKey(endTimestamp) != logMonthKey(now) {
+			return nil, ErrLogCrossMonthQuery
+		}
+		return []logReadTableRange{{
+			TableName:    existingLogReadTable(logTableNameForTimestamp(endTimestamp)),
+			EndTimestamp: endTimestamp,
+		}}, nil
+	}
 }
 
 func ensureLogTableForTimestamp(timestamp int64) (string, error) {

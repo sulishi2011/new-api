@@ -3,10 +3,12 @@ package model
 import (
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type ProviderKeyChannelRef struct {
@@ -53,6 +55,10 @@ type providerKeyChannelRow struct {
 	Key               string `gorm:"column:key"`
 }
 
+type ProviderKeyListOptions struct {
+	SyncFromChannels bool
+}
+
 func providerKeyChannelKeyColumn() string {
 	if commonKeyCol != "" {
 		return "channels." + commonKeyCol
@@ -80,9 +86,15 @@ func providerKeyChannelQuery() *gorm.DB {
 		Select(providerKeyChannelSelect())
 }
 
-func GetPagedProviderKeys(keyword string, startIdx int, pageSize int) ([]*ProviderKeyListItem, int64, error) {
-	if err := syncProviderKeysFromChannels(); err != nil {
-		return nil, 0, err
+func GetPagedProviderKeys(keyword string, startIdx int, pageSize int, options ...ProviderKeyListOptions) ([]*ProviderKeyListItem, int64, error) {
+	var option ProviderKeyListOptions
+	if len(options) > 0 {
+		option = options[0]
+	}
+	if option.SyncFromChannels {
+		if err := SyncProviderKeysFromChannels(); err != nil {
+			return nil, 0, err
+		}
 	}
 
 	baseQuery := logReadDB().Model(&ProviderKey{})
@@ -130,7 +142,7 @@ func GetPagedProviderKeys(keyword string, startIdx int, pageSize int) ([]*Provid
 	if err != nil {
 		return nil, 0, err
 	}
-	channelsByFingerprint, currentKeyByFingerprint, err := getProviderKeyChannels(fingerprintSet)
+	channelsByFingerprint, currentKeyByFingerprint, err := getProviderKeyChannels(providerKeys, fingerprintSet)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -161,13 +173,14 @@ func GetPagedProviderKeys(keyword string, startIdx int, pageSize int) ([]*Provid
 	return items, total, nil
 }
 
-func syncProviderKeysFromChannels() error {
+func SyncProviderKeysFromChannels() error {
 	var channels []providerKeyChannelRow
 	if err := providerKeyChannelQuery().Find(&channels).Error; err != nil {
 		return err
 	}
 
-	seenFingerprints := make(map[string]struct{})
+	now := time.Now().Unix()
+	providerKeysByFingerprint := make(map[string]ProviderKey)
 	for _, channel := range channels {
 		channelModel := Channel{Key: channel.Key}
 		for _, rawKey := range channelModel.GetKeys() {
@@ -175,17 +188,72 @@ func syncProviderKeysFromChannels() error {
 			if fingerprint == "" {
 				continue
 			}
-			if _, duplicated := seenFingerprints[fingerprint]; duplicated {
+			if _, duplicated := providerKeysByFingerprint[fingerprint]; duplicated {
 				continue
 			}
-			if _, err := GetOrCreateProviderKey(rawKey); err != nil {
-				return err
+			providerKeysByFingerprint[fingerprint] = ProviderKey{
+				CreatedAt:      now,
+				UpdatedAt:      now,
+				KeyFingerprint: fingerprint,
+				KeyPreview:     BuildProviderKeyPreview(rawKey),
 			}
-			seenFingerprints[fingerprint] = struct{}{}
 		}
 	}
+	if len(providerKeysByFingerprint) == 0 {
+		return nil
+	}
 
-	return nil
+	providerKeys := make([]ProviderKey, 0, len(providerKeysByFingerprint))
+	for _, providerKey := range providerKeysByFingerprint {
+		providerKeys = append(providerKeys, providerKey)
+	}
+
+	return LOG_DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key_fingerprint"}},
+		DoNothing: true,
+	}).CreateInBatches(providerKeys, 500).Error
+}
+
+func providerKeyPreviewSearchFragments(providerKey *ProviderKey) []string {
+	preview := strings.TrimSpace(providerKey.KeyPreview)
+	if preview == "" {
+		return nil
+	}
+	parts := strings.Split(preview, "...")
+	if len(parts) != 2 {
+		return []string{preview}
+	}
+	fragments := make([]string, 0, 2)
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			fragments = append(fragments, part)
+		}
+	}
+	return fragments
+}
+
+func providerKeyChannelCandidateQuery(providerKeys []*ProviderKey) *gorm.DB {
+	conditions := make([]string, 0, len(providerKeys))
+	args := make([]interface{}, 0, len(providerKeys)*2)
+	keyColumn := providerKeyChannelKeyColumn()
+	for _, providerKey := range providerKeys {
+		fragments := providerKeyPreviewSearchFragments(providerKey)
+		if len(fragments) == 0 {
+			continue
+		}
+		fragmentConditions := make([]string, 0, len(fragments))
+		for _, fragment := range fragments {
+			fragmentConditions = append(fragmentConditions, keyColumn+" LIKE ?")
+			args = append(args, "%"+fragment+"%")
+		}
+		conditions = append(conditions, "("+strings.Join(fragmentConditions, " AND ")+")")
+	}
+	if len(conditions) == 0 {
+		return nil
+	}
+
+	return providerKeyChannelQuery().Where(strings.Join(conditions, " OR "), args...)
 }
 
 func getProviderKeyUsageStats(providerKeyIds []int) (map[int]providerKeyLogAggregateRow, error) {
@@ -222,7 +290,7 @@ func getProviderKeyUsageStats(providerKeyIds []int) (map[int]providerKeyLogAggre
 	return statsByProviderKeyId, nil
 }
 
-func getProviderKeyChannels(fingerprintSet map[string]struct{}) (map[string][]ProviderKeyChannelRef, map[string]string, error) {
+func getProviderKeyChannels(providerKeys []*ProviderKey, fingerprintSet map[string]struct{}) (map[string][]ProviderKeyChannelRef, map[string]string, error) {
 	channelsByFingerprint := make(map[string][]ProviderKeyChannelRef, len(fingerprintSet))
 	currentKeyByFingerprint := make(map[string]string, len(fingerprintSet))
 	if len(fingerprintSet) == 0 {
@@ -230,7 +298,11 @@ func getProviderKeyChannels(fingerprintSet map[string]struct{}) (map[string][]Pr
 	}
 
 	var channels []providerKeyChannelRow
-	if err := providerKeyChannelQuery().Find(&channels).Error; err != nil {
+	candidateQuery := providerKeyChannelCandidateQuery(providerKeys)
+	if candidateQuery == nil {
+		return channelsByFingerprint, currentKeyByFingerprint, nil
+	}
+	if err := candidateQuery.Find(&channels).Error; err != nil {
 		return nil, nil, err
 	}
 

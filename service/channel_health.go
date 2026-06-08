@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -18,10 +19,11 @@ import (
 )
 
 const (
-	channelHealthBucketSeconds    = int64(60)
-	channelHealthRedisKeyPrefix   = "channel_health:v1"
-	channelHealthDisableCooldown  = 5 * time.Minute
-	channelHealthMaxWindowMinutes = 1440
+	channelHealthBucketSeconds            = int64(60)
+	channelHealthRedisKeyPrefix           = "channel_health:v1"
+	channelHealthDisableCooldown          = 5 * time.Minute
+	channelHealthMaxWindowMinutes         = 1440
+	defaultRequestFailureFeishuMutedGroup = "test"
 )
 
 type channelHealthBucket struct {
@@ -124,6 +126,9 @@ func sendRequestFailureWebhookAsync(c *gin.Context, relayInfo *relaycommon.Relay
 		common.SysLog("request failure webhook enabled but url is empty")
 		return
 	}
+	if shouldSkipRequestFailureFeishuWebhook(c, relayInfo, webhookURL) {
+		return
+	}
 
 	modelName := ""
 	retryIndex := 0
@@ -162,6 +167,48 @@ func sendRequestFailureWebhookAsync(c *gin.Context, relayInfo *relaycommon.Relay
 	}
 	notify := dto.NewNotifyWithFields(dto.NotifyTypeChannelRequestFailure, title, content, nil, fields)
 	sendMonitorWebhookAsync(webhookURL, setting.RequestFailureWebhookSecret, notify, "request failure")
+}
+
+func shouldSkipRequestFailureFeishuWebhook(c *gin.Context, relayInfo *relaycommon.RelayInfo, webhookURL string) bool {
+	if !isFeishuWebhookURL(webhookURL) {
+		return false
+	}
+	return requestFailureWebhookGroup(c, relayInfo) == defaultRequestFailureFeishuMutedGroup
+}
+
+func requestFailureWebhookGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	if relayInfo != nil {
+		group := strings.TrimSpace(relayInfo.UsingGroup)
+		if group != "" {
+			return group
+		}
+	}
+	if c != nil {
+		group := strings.TrimSpace(common.GetContextKeyString(c, constant.ContextKeyUsingGroup))
+		if group != "" {
+			return group
+		}
+	}
+	if relayInfo != nil {
+		for _, group := range []string{relayInfo.TokenGroup, relayInfo.UserGroup} {
+			group = strings.TrimSpace(group)
+			if group != "" {
+				return group
+			}
+		}
+	}
+	if c != nil {
+		for _, key := range []constant.ContextKey{
+			constant.ContextKeyTokenGroup,
+			constant.ContextKeyUserGroup,
+		} {
+			group := strings.TrimSpace(common.GetContextKeyString(c, key))
+			if group != "" {
+				return group
+			}
+		}
+	}
+	return ""
 }
 
 func sendMonitorWebhookAsync(webhookURL string, secret string, notify dto.Notify, label string) {

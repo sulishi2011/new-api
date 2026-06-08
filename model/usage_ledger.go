@@ -115,7 +115,7 @@ func CreateUsageLedgerFromLog(log *Log, other map[string]interface{}) {
 	logCopy := *log
 	otherCopy := cloneUsageLedgerOther(other)
 	gopool.Go(func() {
-		createUsageLedgerFromLogSync(&logCopy, otherCopy)
+		_ = createUsageLedgerFromLogSync(&logCopy, otherCopy)
 	})
 }
 
@@ -153,9 +153,9 @@ func cloneUsageLedgerValue(value interface{}) interface{} {
 	}
 }
 
-func createUsageLedgerFromLogSync(log *Log, other map[string]interface{}) {
+func createUsageLedgerFromLogSync(log *Log, other map[string]interface{}) error {
 	if log == nil || log.Type != LogTypeConsume || log.Id == 0 {
-		return
+		return nil
 	}
 	if other == nil {
 		other = make(map[string]interface{})
@@ -234,5 +234,7 @@ func createUsageLedgerFromLogSync(log *Log, other map[string]interface{}) {
 
 	if err := DB.Create(&ledger).Error; err != nil {
 		common.SysLog(fmt.Sprintf("failed to create usage ledger: log_id=%d, error=%v", log.Id, err))
+		return err
 	}
+	return nil
 }

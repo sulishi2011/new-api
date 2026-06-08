@@ -37,8 +37,15 @@ func GetUserUsableGroups(userGroup string) map[string]string {
 }
 
 func GroupInUserUsableGroups(userGroup, groupName string) bool {
+	if groupName == "auto" {
+		return UserCanUseAutoGroup(userGroup)
+	}
 	_, ok := GetUserUsableGroups(userGroup)[groupName]
 	return ok
+}
+
+func UserCanUseAutoGroup(userGroup string) bool {
+	return len(GetUserAutoGroup(userGroup)) > 0
 }
 
 // GetUserAutoGroup 根据用户分组获取自动分组设置

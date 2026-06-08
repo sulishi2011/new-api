@@ -38,6 +38,7 @@ const ChannelsActions = ({
   fixChannelsAbilities,
   updateAllChannelsBalance,
   deleteAllDisabledChannels,
+  clearAllChannelAffinityCache,
   applyAllUpstreamUpdates,
   detectAllUpstreamUpdates,
   detectAllUpstreamUpdatesLoading,
@@ -265,6 +266,27 @@ const ChannelsActions = ({
             onClick={() => setShowVendorProfileManage(true)}
           >
             {t('供应商配置')}
+          </Button>
+
+          <Button
+            size='small'
+            type='danger'
+            className='w-full md:w-auto'
+            onClick={() => {
+              Modal.confirm({
+                title: t('确认清空全部渠道亲和性缓存'),
+                content: (
+                  <div style={{ lineHeight: '1.6' }}>
+                    <Typography.Text>
+                      {t('将删除所有仍在内存中的渠道亲和性缓存条目。')}
+                    </Typography.Text>
+                  </div>
+                ),
+                onOk: () => clearAllChannelAffinityCache(),
+              });
+            }}
+          >
+            {t('清空全部缓存')}
           </Button>
         </div>
 

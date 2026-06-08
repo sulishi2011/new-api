@@ -993,6 +993,18 @@ export const useChannelsData = () => {
     }
   };
 
+  const clearAllChannelAffinityCache = async () => {
+    const res = await API.delete('/api/option/channel_affinity_cache', {
+      params: { all: true },
+    });
+    const { success, message } = res.data;
+    if (success) {
+      showSuccess(t('已清空'));
+    } else {
+      showError(t(message));
+    }
+  };
+
   const updateChannelBalance = async (record) => {
     if (record?.type === 57) {
       openCodexUsageModal({
@@ -1490,6 +1502,7 @@ export const useChannelsData = () => {
     testAllChannels,
     deleteAllDisabledChannels,
     updateAllChannelsBalance,
+    clearAllChannelAffinityCache,
     updateChannelBalance,
     fixChannelsAbilities,
     checkOllamaVersion,

@@ -11,8 +11,11 @@ import (
 func GetAllProviderKeys(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	keyword := strings.TrimSpace(c.Query("keyword"))
+	syncFromChannels := c.Query("sync_from_channels") == "true"
 
-	items, total, err := model.GetPagedProviderKeys(keyword, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	items, total, err := model.GetPagedProviderKeys(keyword, pageInfo.GetStartIdx(), pageInfo.GetPageSize(), model.ProviderKeyListOptions{
+		SyncFromChannels: syncFromChannels,
+	})
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -574,20 +574,23 @@ type LogQueryOptions struct {
 	Feature           string
 }
 
-func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int) (logs []*Log, total int64, err error) {
-	return GetAllLogsWithOptions(logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, providerKeyId, LogQueryOptions{})
+func applyLogRangeFilter(tx *gorm.DB, tableRange logReadTableRange, columnPrefix string) *gorm.DB {
+	column := columnPrefix + "created_at"
+	if tableRange.StartTimestamp != 0 {
+		tx = tx.Where(column+" >= ?", tableRange.StartTimestamp)
+	}
+	if tableRange.EndTimestamp != 0 {
+		tx = tx.Where(column+" <= ?", tableRange.EndTimestamp)
+	}
+	return tx
 }
 
-func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
-	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
-	if err != nil {
-		return nil, 0, err
-	}
+func buildAllLogsReadQuery(db *gorm.DB, tableRange logReadTableRange, logType int, modelName string, username string, tokenName string, channel int, group string, requestId string, providerKeyId int, opts LogQueryOptions) *gorm.DB {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
-		tx = logReadDB().Table(logReadTableExpr(tableName))
+		tx = db.Table(logReadTableExpr(tableRange.TableName))
 	} else {
-		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.type = ?", logType)
+		tx = db.Table(logReadTableExpr(tableRange.TableName)).Where("logs.type = ?", logType)
 	}
 
 	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
@@ -620,23 +623,120 @@ func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64
 	if opts.UpstreamRequestId != "" {
 		tx = tx.Where("logs.upstream_request_id = ?", opts.UpstreamRequestId)
 	}
-	if startTimestamp != 0 {
-		tx = tx.Where("logs.created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("logs.created_at <= ?", endTimestamp)
-	}
+	tx = applyLogRangeFilter(tx, tableRange, "logs.")
 	if channel != 0 {
 		tx = tx.Where("logs.channel_id = ?", channel)
 	}
 	if group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", group)
 	}
-	err = tx.Count(&total).Error
+	return tx
+}
+
+func buildUserLogsReadQuery(db *gorm.DB, tableRange logReadTableRange, userId int, logType int, modelName string, tokenName string, group string, requestId string, providerKeyId int, opts LogQueryOptions) *gorm.DB {
+	var tx *gorm.DB
+	if logType == LogTypeUnknown {
+		tx = db.Table(logReadTableExpr(tableRange.TableName)).Where("logs.user_id = ?", userId)
+	} else {
+		tx = db.Table(logReadTableExpr(tableRange.TableName)).Where("logs.user_id = ? and logs.type = ?", userId, logType)
+	}
+
+	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
+	tx = applyLogContainsFilter(tx, "logs.token_name", tokenName)
+	if requestId != "" {
+		tx = tx.Where("logs.request_id = ?", requestId)
+	}
+	if opts.ExternalRequestId != "" {
+		tx = tx.Where("logs.external_request_id = ?", opts.ExternalRequestId)
+	}
+	if providerKeyId != 0 {
+		tx = tx.Where("logs.provider_key_id = ?", providerKeyId)
+	}
+	if opts.VendorProfileId != 0 {
+		tx = tx.Where("logs.vendor_profile_id = ?", opts.VendorProfileId)
+	}
+	if opts.BizLine != "" {
+		tx = tx.Where("logs.biz_line = ?", opts.BizLine)
+	}
+	if opts.BizScene != "" {
+		tx = tx.Where("logs.biz_scene = ?", opts.BizScene)
+	}
+	if opts.UserTier != "" {
+		tx = tx.Where("logs.user_tier = ?", opts.UserTier)
+	}
+	if opts.Feature != "" {
+		tx = tx.Where("logs.feature = ?", opts.Feature)
+	}
+	if opts.UpstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", opts.UpstreamRequestId)
+	}
+	tx = applyLogRangeFilter(tx, tableRange, "logs.")
+	if group != "" {
+		tx = tx.Where("logs."+logGroupCol+" = ?", group)
+	}
+	return tx
+}
+
+func countLogsAcrossRanges(ranges []logReadTableRange, buildQuery func(*gorm.DB, logReadTableRange) *gorm.DB) ([]int64, int64, error) {
+	counts := make([]int64, len(ranges))
+	var total int64
+	for i, tableRange := range ranges {
+		if err := buildQuery(logReadDB(), tableRange).Count(&counts[i]).Error; err != nil {
+			return nil, 0, err
+		}
+		total += counts[i]
+	}
+	return counts, total, nil
+}
+
+func findLogsAcrossRanges(ranges []logReadTableRange, counts []int64, startIdx int, num int, buildQuery func(*gorm.DB, logReadTableRange) *gorm.DB) ([]*Log, error) {
+	if num <= 0 {
+		return []*Log{}, nil
+	}
+
+	logs := make([]*Log, 0, num)
+	remainingOffset := int64(startIdx)
+	remainingLimit := num
+	for i := len(ranges) - 1; i >= 0 && remainingLimit > 0; i-- {
+		if remainingOffset >= counts[i] {
+			remainingOffset -= counts[i]
+			continue
+		}
+
+		var rangeLogs []*Log
+		err := buildQuery(logReadDB(), ranges[i]).
+			Order("logs.created_at desc, logs.id desc").
+			Limit(remainingLimit).
+			Offset(int(remainingOffset)).
+			Find(&rangeLogs).Error
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, rangeLogs...)
+		remainingLimit -= len(rangeLogs)
+		remainingOffset = 0
+	}
+	return logs, nil
+}
+
+func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int) (logs []*Log, total int64, err error) {
+	return GetAllLogsWithOptions(logType, startTimestamp, endTimestamp, modelName, username, tokenName, startIdx, num, channel, group, requestId, providerKeyId, LogQueryOptions{})
+}
+
+func GetAllLogsWithOptions(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
+	ranges, err := resolveLogReadTableRanges(startTimestamp, endTimestamp)
 	if err != nil {
 		return nil, 0, err
 	}
-	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+
+	buildQuery := func(db *gorm.DB, tableRange logReadTableRange) *gorm.DB {
+		return buildAllLogsReadQuery(db, tableRange, logType, modelName, username, tokenName, channel, group, requestId, providerKeyId, opts)
+	}
+	counts, total, err := countLogsAcrossRanges(ranges, buildQuery)
+	if err != nil {
+		return nil, 0, err
+	}
+	logs, err = findLogsAcrossRanges(ranges, counts, startIdx, num, buildQuery)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -691,61 +791,23 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 }
 
 func GetUserLogsWithOptions(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, providerKeyId int, opts LogQueryOptions) (logs []*Log, total int64, err error) {
-	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	ranges, err := resolveLogReadTableRanges(startTimestamp, endTimestamp)
 	if err != nil {
 		return nil, 0, err
 	}
-	var tx *gorm.DB
-	if logType == LogTypeUnknown {
-		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.user_id = ?", userId)
-	} else {
-		tx = logReadDB().Table(logReadTableExpr(tableName)).Where("logs.user_id = ? and logs.type = ?", userId, logType)
-	}
 
-	tx = applyLogContainsFilter(tx, "logs.model_name", modelName)
-	tx = applyLogContainsFilter(tx, "logs.token_name", tokenName)
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
+	buildQuery := func(db *gorm.DB, tableRange logReadTableRange) *gorm.DB {
+		return buildUserLogsReadQuery(db, tableRange, userId, logType, modelName, tokenName, group, requestId, providerKeyId, opts)
 	}
-	if opts.ExternalRequestId != "" {
-		tx = tx.Where("logs.external_request_id = ?", opts.ExternalRequestId)
-	}
-	if providerKeyId != 0 {
-		tx = tx.Where("logs.provider_key_id = ?", providerKeyId)
-	}
-	if opts.VendorProfileId != 0 {
-		tx = tx.Where("logs.vendor_profile_id = ?", opts.VendorProfileId)
-	}
-	if opts.BizLine != "" {
-		tx = tx.Where("logs.biz_line = ?", opts.BizLine)
-	}
-	if opts.BizScene != "" {
-		tx = tx.Where("logs.biz_scene = ?", opts.BizScene)
-	}
-	if opts.UserTier != "" {
-		tx = tx.Where("logs.user_tier = ?", opts.UserTier)
-	}
-	if opts.Feature != "" {
-		tx = tx.Where("logs.feature = ?", opts.Feature)
-	}
-	if opts.UpstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", opts.UpstreamRequestId)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("logs.created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("logs.created_at <= ?", endTimestamp)
-	}
-	if group != "" {
-		tx = tx.Where("logs."+logGroupCol+" = ?", group)
-	}
-	err = tx.Limit(logSearchCountLimit).Count(&total).Error
+	counts, total, err := countLogsAcrossRanges(ranges, buildQuery)
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
 	}
-	err = tx.Order("logs.created_at desc, logs.id desc").Limit(num).Offset(startIdx).Find(&logs).Error
+	if total > logSearchCountLimit {
+		total = logSearchCountLimit
+	}
+	logs, err = findLogsAcrossRanges(ranges, counts, startIdx, num, buildQuery)
 	if err != nil {
 		common.SysError("failed to search user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")
@@ -787,39 +849,58 @@ func isPostgresRecoveryConflict(err error) bool {
 	return strings.Contains(msg, "sqlstate 40001") && strings.Contains(msg, "conflict with recovery")
 }
 
+func isLogReadReplicaMissingTable(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "no such table") ||
+		strings.Contains(msg, "doesn't exist") ||
+		strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "undefined table")
+}
+
 func scanLogReadWithPrimaryFallback(queryName string, buildQuery func(*gorm.DB) *gorm.DB, dest interface{}) error {
 	readDB := logReadDB()
 	err := buildQuery(readDB).Scan(dest).Error
 	if err == nil {
 		return nil
 	}
-	if LOG_DB == nil || readDB == LOG_DB || !isPostgresRecoveryConflict(err) {
+	if LOG_DB == nil || readDB == LOG_DB || (!isPostgresRecoveryConflict(err) && !isLogReadReplicaMissingTable(err)) {
 		return err
 	}
 
-	common.SysLog("log read replica recovery conflict, retrying " + queryName + " on primary: " + err.Error())
+	common.SysLog("log read replica query failed, retrying " + queryName + " on primary: " + err.Error())
 	if retryErr := buildQuery(LOG_DB).Scan(dest).Error; retryErr != nil {
-		return fmt.Errorf("%s read replica recovery conflict: %v; primary retry failed: %w", queryName, err, retryErr)
+		return fmt.Errorf("%s read replica query failed: %v; primary retry failed: %w", queryName, err, retryErr)
 	}
 	return nil
 }
 
+func uniqueLogReadTableNames(ranges []logReadTableRange) []string {
+	seen := make(map[string]struct{}, len(ranges))
+	tableNames := make([]string, 0, len(ranges))
+	for _, tableRange := range ranges {
+		if _, ok := seen[tableRange.TableName]; ok {
+			continue
+		}
+		seen[tableRange.TableName] = struct{}{}
+		tableNames = append(tableNames, tableRange.TableName)
+	}
+	return tableNames
+}
+
 func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string, externalRequestId string, providerKeyId int, vendorProfileId int, bizLine string, bizScene string, userTier string, feature string) (stat Stat, err error) {
-	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	ranges, err := resolveLogReadTableRanges(startTimestamp, endTimestamp)
 	if err != nil {
 		return stat, err
 	}
 
-	buildQuotaQuery := func(db *gorm.DB) *gorm.DB {
-		tx := db.Table(logRawTableExpr(tableName)).Select("sum(quota) quota")
+	buildQuotaQuery := func(db *gorm.DB, tableRange logReadTableRange) *gorm.DB {
+		tx := db.Table(logRawTableExpr(tableRange.TableName)).Select("sum(quota) quota")
 		tx = applyLogContainsFilter(tx, "username", username)
 		tx = applyLogContainsFilter(tx, "token_name", tokenName)
-		if startTimestamp != 0 {
-			tx = tx.Where("created_at >= ?", startTimestamp)
-		}
-		if endTimestamp != 0 {
-			tx = tx.Where("created_at <= ?", endTimestamp)
-		}
+		tx = applyLogRangeFilter(tx, tableRange, "")
 		tx = applyLogContainsFilter(tx, "model_name", modelName)
 		if channel != 0 {
 			tx = tx.Where("channel_id = ?", channel)
@@ -852,7 +933,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	}
 
 	rpmTpmStart := time.Now().Add(-60 * time.Second).Unix()
-	buildRpmTpmQuery := func(db *gorm.DB) *gorm.DB {
+	buildRpmTpmQuery := func(db *gorm.DB, tableName string) *gorm.DB {
 		tx := db.Table(logRawTableExpr(tableName)).Select("count(*) rpm, sum(prompt_tokens) + sum(completion_tokens) tpm")
 		tx = applyLogContainsFilter(tx, "username", username)
 		tx = applyLogContainsFilter(tx, "token_name", tokenName)
@@ -887,20 +968,33 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 		return tx.Where("type = ?", LogTypeConsume).Where("created_at >= ?", rpmTpmStart)
 	}
 
-	if err := scanLogReadWithPrimaryFallback("log quota stat", buildQuotaQuery, &stat); err != nil {
-		common.SysError("failed to query log stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
+	for _, tableRange := range ranges {
+		var partial Stat
+		if err := scanLogReadWithPrimaryFallback("log quota stat", func(db *gorm.DB) *gorm.DB {
+			return buildQuotaQuery(db, tableRange)
+		}, &partial); err != nil {
+			common.SysError("failed to query log stat: " + err.Error())
+			return stat, errors.New("查询统计数据失败")
+		}
+		stat.Quota += partial.Quota
 	}
-	if err := scanLogReadWithPrimaryFallback("log rpm/tpm stat", buildRpmTpmQuery, &stat); err != nil {
-		common.SysError("failed to query rpm/tpm stat: " + err.Error())
-		return stat, errors.New("查询统计数据失败")
+	for _, tableName := range uniqueLogReadTableNames(ranges) {
+		var partial Stat
+		if err := scanLogReadWithPrimaryFallback("log rpm/tpm stat", func(db *gorm.DB) *gorm.DB {
+			return buildRpmTpmQuery(db, tableName)
+		}, &partial); err != nil {
+			common.SysError("failed to query rpm/tpm stat: " + err.Error())
+			return stat, errors.New("查询统计数据失败")
+		}
+		stat.Rpm += partial.Rpm
+		stat.Tpm += partial.Tpm
 	}
 
 	return stat, nil
 }
 
 func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string) (token int) {
-	tableName, err := resolveLogReadTable(startTimestamp, endTimestamp)
+	ranges, err := resolveLogReadTableRanges(startTimestamp, endTimestamp)
 	if err != nil {
 		return 0
 	}
@@ -908,23 +1002,22 @@ func SumUsedToken(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if logDatabaseType() == common.DatabaseTypePostgreSQL {
 		sumExpr = "COALESCE(sum(prompt_tokens),0) + COALESCE(sum(completion_tokens),0)"
 	}
-	tx := logReadDB().Table(logRawTableExpr(tableName)).Select(sumExpr)
-	if username != "" {
-		tx = tx.Where("username = ?", username)
+	for _, tableRange := range ranges {
+		var partial int
+		tx := logReadDB().Table(logRawTableExpr(tableRange.TableName)).Select(sumExpr)
+		if username != "" {
+			tx = tx.Where("username = ?", username)
+		}
+		if tokenName != "" {
+			tx = tx.Where("token_name = ?", tokenName)
+		}
+		tx = applyLogRangeFilter(tx, tableRange, "")
+		if modelName != "" {
+			tx = tx.Where("model_name = ?", modelName)
+		}
+		tx.Where("type = ?", LogTypeConsume).Scan(&partial)
+		token += partial
 	}
-	if tokenName != "" {
-		tx = tx.Where("token_name = ?", tokenName)
-	}
-	if startTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", startTimestamp)
-	}
-	if endTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", endTimestamp)
-	}
-	if modelName != "" {
-		tx = tx.Where("model_name = ?", modelName)
-	}
-	tx.Where("type = ?", LogTypeConsume).Scan(&token)
 	return token
 }
 

@@ -34,6 +34,13 @@ export function dateToUnixTimestamp(date: Date): number {
 }
 
 /**
+ * Browser-local offset from UTC in seconds. Positive values are east of UTC.
+ */
+export function getLocalTimezoneOffsetSeconds(): number {
+  return -new Date().getTimezoneOffset() * 60
+}
+
+/**
  * Get start of day for a Unix timestamp (seconds)
  * Sets time to 00:00:00
  */
@@ -176,18 +183,39 @@ export function formatChartTime(
   return result
 }
 
-/**
- * Format a UTC aggregate bucket as an explicit half-open time range.
- * Usage aggregates are bucketed in UTC on the backend, so table rows should not
- * use local time or chart-axis short labels.
- */
+/** Format a UTC aggregate bucket as an explicit half-open time range. */
 export function formatUtcBucketRange(
   timestamp: number,
   granularity: TimeGranularity = 'day'
 ): string {
+  return formatTimezoneBucketRange(timestamp, granularity, 0)
+}
+
+function formatTimezoneOffsetLabel(offsetSeconds: number): string {
+  if (!offsetSeconds) return 'UTC'
+
+  const sign = offsetSeconds >= 0 ? '+' : '-'
+  const absolute = Math.abs(offsetSeconds)
+  const hours = Math.floor(absolute / 3600)
+  const minutes = Math.floor((absolute % 3600) / 60)
+
+  const hourText = String(hours).padStart(2, '0')
+  const minuteText = String(minutes).padStart(2, '0')
+  return `UTC${sign}${hourText}:${minuteText}`
+}
+
+/**
+ * Format an aggregate bucket using the same timezone offset that was sent to
+ * the backend for bucket calculation.
+ */
+export function formatTimezoneBucketRange(
+  timestamp: number,
+  granularity: TimeGranularity = 'day',
+  timezoneOffsetSeconds = 0
+): string {
   if (!timestamp) return '-'
 
-  const start = dayjs.unix(timestamp).utc()
+  const start = dayjs.unix(timestamp + timezoneOffsetSeconds).utc()
   if (!start.isValid()) return '-'
 
   const unit =
@@ -197,7 +225,8 @@ export function formatUtcBucketRange(
     ? end.format('HH:mm')
     : end.format('YYYY-MM-DD HH:mm')
 
-  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} UTC`
+  const timezoneLabel = formatTimezoneOffsetLabel(timezoneOffsetSeconds)
+  return `${start.format('YYYY-MM-DD HH:mm')} - ${endText} ${timezoneLabel}`
 }
 
 /**

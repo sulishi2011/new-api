@@ -62,7 +62,6 @@ export default function SettingsSidebarModulesAdmin(props) {
     admin: {
       enabled: true,
       channel: true,
-      credential: true,
       models: true,
       deployment: true,
       redemption: true,
@@ -124,7 +123,6 @@ export default function SettingsSidebarModulesAdmin(props) {
       admin: {
         enabled: true,
         channel: true,
-        credential: true,
         models: true,
         deployment: true,
         redemption: true,
@@ -194,7 +192,6 @@ export default function SettingsSidebarModulesAdmin(props) {
           admin: {
             enabled: true,
             channel: true,
-            credential: true,
             models: true,
             deployment: true,
             redemption: true,
@@ -263,11 +260,6 @@ export default function SettingsSidebarModulesAdmin(props) {
       description: t('系统管理功能'),
       modules: [
         { key: 'channel', title: t('渠道管理'), description: t('API渠道配置') },
-        {
-          key: 'credential',
-          title: t('凭证管理'),
-          description: t('按稳定 Key ID 查看上游凭证使用情况'),
-        },
         { key: 'models', title: t('模型管理'), description: t('AI模型配置') },
         {
           key: 'deployment',

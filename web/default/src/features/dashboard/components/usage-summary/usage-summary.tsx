@@ -31,7 +31,11 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import dayjs from '@/lib/dayjs'
 import { formatNumber, formatQuota } from '@/lib/format'
-import { dateToUnixTimestamp, formatUtcBucketRange } from '@/lib/time'
+import {
+  dateToUnixTimestamp,
+  formatTimezoneBucketRange,
+  getLocalTimezoneOffsetSeconds,
+} from '@/lib/time'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -50,6 +54,7 @@ import { CompactDateTimeRangePicker } from '@/features/usage-logs/components/com
 import { exportUsageAggregates, getUsageAggregates } from '../../api'
 import type {
   UsageAggregateGranularity,
+  UsageAggregateGroupBy,
   UsageAggregateQueryParams,
   UsageAggregateRow,
   UsageAggregateSummary,
@@ -59,6 +64,7 @@ type UsageSource = 'live' | 'aggregate'
 
 type UsageSummaryFilters = {
   granularity: UsageAggregateGranularity
+  groupBy: UsageAggregateGroupBy
   source: UsageSource
   range: { start?: Date; end?: Date }
   channelId: string
@@ -83,6 +89,7 @@ function getDefaultFilters(): UsageSummaryFilters {
   const now = dayjs()
   return {
     granularity: 'day',
+    groupBy: 'channel',
     source: 'live',
     range: {
       start: now.subtract(6, 'day').startOf('day').toDate(),
@@ -122,14 +129,17 @@ function getSortParams(sorting: SortingState): {
 function buildUsageSummaryParams(
   filters: UsageSummaryFilters,
   pagination?: PaginationState,
-  sorting: SortingState = []
+  sorting: SortingState = [],
+  timezoneOffsetSeconds = getLocalTimezoneOffsetSeconds()
 ): UsageAggregateQueryParams {
   const sort = getSortParams(sorting)
   return {
     p: pagination ? pagination.pageIndex + 1 : undefined,
     page_size: pagination?.pageSize,
     granularity: filters.granularity,
+    group_by: filters.groupBy,
     live: filters.source === 'live',
+    timezone_offset: timezoneOffsetSeconds,
     start_timestamp: filters.range.start
       ? dateToUnixTimestamp(filters.range.start)
       : undefined,
@@ -206,12 +216,14 @@ function formatVendorChannelName(row: UsageAggregateRow): string {
 }
 
 function useUsageSummaryColumns(
-  granularity: UsageAggregateGranularity
+  granularity: UsageAggregateGranularity,
+  timezoneOffsetSeconds: number,
+  groupBy: UsageAggregateGroupBy
 ): ColumnDef<UsageAggregateRow>[] {
   const { t } = useTranslation()
 
-  return useMemo(
-    () => [
+  return useMemo(() => {
+    const primaryColumns: ColumnDef<UsageAggregateRow>[] = [
       {
         accessorKey: 'bucket_start',
         header: ({ column }) => (
@@ -219,27 +231,15 @@ function useUsageSummaryColumns(
         ),
         cell: ({ row }) => (
           <span className='font-mono text-xs whitespace-nowrap'>
-            {formatUtcBucketRange(row.original.bucket_start, granularity)}
+            {formatTimezoneBucketRange(
+              row.original.bucket_start,
+              granularity,
+              timezoneOffsetSeconds
+            )}
           </span>
         ),
         enableSorting: true,
         meta: { label: t('Bucket'), mobileTitle: true },
-      },
-      {
-        accessorKey: 'requested_model',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('Requested model')} />
-        ),
-        cell: ({ row }) => <ModelText value={row.original.requested_model} />,
-        meta: { label: t('Requested model') },
-      },
-      {
-        accessorKey: 'actual_model',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('Actual model')} />
-        ),
-        cell: ({ row }) => <ModelText value={row.original.actual_model} />,
-        meta: { label: t('Actual model') },
       },
       {
         accessorKey: 'channel_id',
@@ -254,32 +254,68 @@ function useUsageSummaryColumns(
         ),
         meta: { label: t('Channel') },
       },
-      {
-        accessorKey: 'provider_key_id',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('Provider key')} />
-        ),
-        cell: ({ row }) => (
-          <EntityLabel
-            id={row.original.provider_key_id}
-            preview={row.original.provider_key_preview}
-          />
-        ),
-        meta: { label: t('Provider key') },
-      },
-      {
-        accessorKey: 'token_id',
-        header: ({ column }) => (
-          <DataTableColumnHeader column={column} title={t('Token')} />
-        ),
-        cell: ({ row }) => (
-          <EntityLabel
-            id={row.original.token_id}
-            name={row.original.token_name}
-          />
-        ),
-        meta: { label: t('Token') },
-      },
+    ]
+
+    const detailColumns: ColumnDef<UsageAggregateRow>[] =
+      groupBy === 'detail'
+        ? [
+            {
+              accessorKey: 'requested_model',
+              header: ({ column }) => (
+                <DataTableColumnHeader
+                  column={column}
+                  title={t('Requested model')}
+                />
+              ),
+              cell: ({ row }) => (
+                <ModelText value={row.original.requested_model} />
+              ),
+              meta: { label: t('Requested model') },
+            },
+            {
+              accessorKey: 'actual_model',
+              header: ({ column }) => (
+                <DataTableColumnHeader
+                  column={column}
+                  title={t('Actual model')}
+                />
+              ),
+              cell: ({ row }) => <ModelText value={row.original.actual_model} />,
+              meta: { label: t('Actual model') },
+            },
+            {
+              accessorKey: 'provider_key_id',
+              header: ({ column }) => (
+                <DataTableColumnHeader
+                  column={column}
+                  title={t('Provider key')}
+                />
+              ),
+              cell: ({ row }) => (
+                <EntityLabel
+                  id={row.original.provider_key_id}
+                  preview={row.original.provider_key_preview}
+                />
+              ),
+              meta: { label: t('Provider key') },
+            },
+            {
+              accessorKey: 'token_id',
+              header: ({ column }) => (
+                <DataTableColumnHeader column={column} title={t('Token')} />
+              ),
+              cell: ({ row }) => (
+                <EntityLabel
+                  id={row.original.token_id}
+                  name={row.original.token_name}
+                />
+              ),
+              meta: { label: t('Token') },
+            },
+          ]
+        : []
+
+    const metricColumns: ColumnDef<UsageAggregateRow>[] = [
       {
         accessorKey: 'request_count',
         header: ({ column }) => (
@@ -384,9 +420,10 @@ function useUsageSummaryColumns(
         enableSorting: true,
         meta: { label: t('Total tokens') },
       },
-    ],
-    [granularity, t]
-  )
+    ]
+
+    return [...primaryColumns, ...detailColumns, ...metricColumns]
+  }, [granularity, groupBy, t, timezoneOffsetSeconds])
 }
 
 function buildExportFilename() {
@@ -412,11 +449,22 @@ export function UsageSummary() {
     cache_write_tokens: false,
   })
   const [isExporting, setIsExporting] = useState(false)
-  const columns = useUsageSummaryColumns(filters.granularity)
+  const timezoneOffsetSeconds = getLocalTimezoneOffsetSeconds()
+  const columns = useUsageSummaryColumns(
+    filters.granularity,
+    timezoneOffsetSeconds,
+    filters.groupBy
+  )
 
   const params = useMemo(
-    () => buildUsageSummaryParams(filters, pagination, sorting),
-    [filters, pagination, sorting]
+    () =>
+      buildUsageSummaryParams(
+        filters,
+        pagination,
+        sorting,
+        timezoneOffsetSeconds
+      ),
+    [filters, pagination, sorting, timezoneOffsetSeconds]
   )
 
   const query = useQuery({
@@ -475,7 +523,12 @@ export function UsageSummary() {
     setIsExporting(true)
     try {
       const blob = await exportUsageAggregates(
-        buildUsageSummaryParams(filters, undefined, sorting)
+        buildUsageSummaryParams(
+          filters,
+          undefined,
+          sorting,
+          timezoneOffsetSeconds
+        )
       )
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
@@ -522,7 +575,7 @@ export function UsageSummary() {
       </div>
 
       <div className='rounded-lg border p-3'>
-        <div className='grid gap-2 lg:grid-cols-[minmax(260px,1.5fr)_repeat(3,minmax(130px,0.75fr))]'>
+        <div className='grid gap-2 lg:grid-cols-[minmax(260px,1.5fr)_repeat(4,minmax(130px,0.75fr))]'>
           <CompactDateTimeRangePicker
             start={filters.range.start}
             end={filters.range.end}
@@ -545,6 +598,26 @@ export function UsageSummary() {
               <SelectGroup>
                 <SelectItem value='day'>{t('Day')}</SelectItem>
                 <SelectItem value='hour'>{t('Hour')}</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Select
+            items={[
+              { value: 'channel', label: t('Channel') },
+              { value: 'detail', label: t('Details') },
+            ]}
+            value={filters.groupBy}
+            onValueChange={(value) =>
+              updateFilter('groupBy', value as UsageAggregateGroupBy)
+            }
+          >
+            <SelectTrigger className='w-full'>
+              <SelectValue placeholder={t('View mode')} />
+            </SelectTrigger>
+            <SelectContent alignItemWithTrigger={false}>
+              <SelectGroup>
+                <SelectItem value='channel'>{t('Channel')}</SelectItem>
+                <SelectItem value='detail'>{t('Details')}</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
@@ -638,6 +711,9 @@ export function UsageSummary() {
             </Badge>
             <Badge variant='outline'>
               {filters.granularity === 'day' ? t('Day') : t('Hour')}
+            </Badge>
+            <Badge variant='outline'>
+              {filters.groupBy === 'channel' ? t('Channel') : t('Details')}
             </Badge>
           </div>
           <Button

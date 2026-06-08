@@ -32,7 +32,6 @@ import { StatusContext } from './context/Status';
 import PasswordResetForm from './components/auth/PasswordResetForm';
 import PasswordResetConfirm from './components/auth/PasswordResetConfirm';
 import Channel from './pages/Channel';
-import Credential from './pages/Credential';
 import Token from './pages/Token';
 import Redemption from './pages/Redemption';
 import TopUp from './pages/TopUp';
@@ -141,14 +140,7 @@ function App() {
             </AdminRoute>
           }
         />
-        <Route
-          path='/console/credential'
-          element={
-            <AdminRoute>
-              <Credential />
-            </AdminRoute>
-          }
-        />
+        <Route path='/console/credential' element={<NotFound />} />
         <Route
           path='/console/token'
           element={

@@ -82,8 +82,8 @@ func normalizeDashboardDimension(input string) DashboardDimension {
 	}
 }
 
-func buildDashboardUsageBaseQuery(db *gorm.DB, tableName string, query DashboardUsageQuery, modelNamePattern string) *gorm.DB {
-	tx := db.Table(logRawTableExpr(tableName)).Where("type = ?", LogTypeConsume)
+func buildDashboardUsageBaseQuery(db *gorm.DB, tableRange logReadTableRange, query DashboardUsageQuery, modelNamePattern string) *gorm.DB {
+	tx := db.Table(logRawTableExpr(tableRange.TableName)).Where("type = ?", LogTypeConsume)
 
 	if query.UserID > 0 {
 		tx = tx.Where("user_id = ?", query.UserID)
@@ -91,12 +91,7 @@ func buildDashboardUsageBaseQuery(db *gorm.DB, tableName string, query Dashboard
 	if query.Username != "" {
 		tx = tx.Where("username = ?", query.Username)
 	}
-	if query.StartTimestamp != 0 {
-		tx = tx.Where("created_at >= ?", query.StartTimestamp)
-	}
-	if query.EndTimestamp != 0 {
-		tx = tx.Where("created_at <= ?", query.EndTimestamp)
-	}
+	tx = applyLogRangeFilter(tx, tableRange, "")
 	if query.ModelName != "" {
 		tx = tx.Where("model_name LIKE ? ESCAPE '!'", modelNamePattern)
 	}
@@ -360,8 +355,16 @@ func queryDashboardLedgerRows(query DashboardUsageQuery, granularity string, ran
 
 func dashboardUsageRowKey(row dashboardUsageAggregate, dimension DashboardDimension) string {
 	switch dimension {
-	case DashboardDimensionProviderKey, DashboardDimensionChannel, DashboardDimensionToken:
+	case DashboardDimensionProviderKey, DashboardDimensionChannel, DashboardDimensionToken, DashboardDimensionVendorProfile:
 		return fmt.Sprintf("%d|%d", row.CreatedAt, row.DimensionID)
+	case DashboardDimensionUsername:
+		return fmt.Sprintf("%d|%s", row.CreatedAt, row.Username)
+	case DashboardDimensionGroup:
+		return fmt.Sprintf("%d|%s", row.CreatedAt, row.GroupName)
+	case DashboardDimensionBizLine:
+		return fmt.Sprintf("%d|%s", row.CreatedAt, row.BizLine)
+	case DashboardDimensionBizScene:
+		return fmt.Sprintf("%d|%s", row.CreatedAt, row.BizScene)
 	default:
 		return fmt.Sprintf("%d|%s", row.CreatedAt, row.ModelName)
 	}
@@ -449,7 +452,7 @@ func listDashboardUsageRows(query DashboardUsageQuery) ([]dashboardUsageAggregat
 		return rows, err
 	}
 
-	tableName, err := resolveLogReadTable(query.StartTimestamp, query.EndTimestamp)
+	ranges, err := resolveLogReadTableRanges(query.StartTimestamp, query.EndTimestamp)
 	if err != nil {
 		return nil, err
 	}
@@ -471,17 +474,21 @@ func listDashboardUsageRows(query DashboardUsageQuery) ([]dashboardUsageAggregat
 		"COALESCE(SUM(prompt_tokens + completion_tokens), 0) AS token_used",
 	}
 
-	var rows []dashboardUsageAggregate
-	buildQuery := func(db *gorm.DB) *gorm.DB {
-		return buildDashboardUsageBaseQuery(db, tableName, query, modelNamePattern).
-			Select(strings.Join(selectFields, ", ")).
-			Group(bucketExpr + ", " + groupPart).
-			Order("created_at ASC")
+	rowGroups := make([][]dashboardUsageAggregate, 0, len(ranges))
+	for _, tableRange := range ranges {
+		var rows []dashboardUsageAggregate
+		buildQuery := func(db *gorm.DB) *gorm.DB {
+			return buildDashboardUsageBaseQuery(db, tableRange, query, modelNamePattern).
+				Select(strings.Join(selectFields, ", ")).
+				Group(bucketExpr + ", " + groupPart).
+				Order("created_at ASC")
+		}
+		if err := scanLogReadWithPrimaryFallback("dashboard usage rows", buildQuery, &rows); err != nil {
+			return nil, err
+		}
+		rowGroups = append(rowGroups, rows)
 	}
-	if err := scanLogReadWithPrimaryFallback("dashboard usage rows", buildQuery, &rows); err != nil {
-		return nil, err
-	}
-	return rows, nil
+	return mergeDashboardUsageRows(query.Dimension, rowGroups...), nil
 }
 
 func loadNamedEntityMap(table string, ids []int) map[int]string {

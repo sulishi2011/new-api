@@ -38,7 +38,7 @@ func GetUserGroups(c *gin.Context) {
 			}
 		}
 	}
-	if _, ok := userUsableGroups["auto"]; ok {
+	if service.UserCanUseAutoGroup(userGroup) {
 		usableGroups["auto"] = map[string]interface{}{
 			"ratio": "自动",
 			"desc":  setting.GetUsableGroupDescription("auto"),

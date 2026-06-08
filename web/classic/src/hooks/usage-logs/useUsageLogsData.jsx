@@ -125,12 +125,7 @@ export const useLogsData = () => {
     provider_key_id: queryPrefill.provider_key_id,
     group: '',
     request_id: queryPrefill.request_id,
-    external_request_id: '',
     vendor_profile_id: '',
-    biz_line: '',
-    biz_scene: '',
-    user_tier: '',
-    feature: '',
     dateRange: getDefaultLogDateRange(),
     logType: '0',
   };
@@ -285,15 +280,11 @@ export const useLogsData = () => {
       start_timestamp,
       end_timestamp,
       channel: formValues.channel || '',
-      provider_key_id: formValues.provider_key_id || '',
+      provider_key_id:
+        formValues.provider_key_id || queryPrefill.provider_key_id,
       group: formValues.group || '',
       request_id: formValues.request_id || '',
-      external_request_id: formValues.external_request_id || '',
       vendor_profile_id: formValues.vendor_profile_id || '',
-      biz_line: formValues.biz_line || '',
-      biz_scene: formValues.biz_scene || '',
-      user_tier: formValues.user_tier || '',
-      feature: formValues.feature || '',
       logType: formValues.logType ? parseInt(formValues.logType) : 0,
     };
   };
@@ -306,18 +297,13 @@ export const useLogsData = () => {
       start_timestamp,
       end_timestamp,
       group,
-      external_request_id,
       vendor_profile_id,
-      biz_line,
-      biz_scene,
-      user_tier,
-      feature,
       logType: formLogType,
     } = getFormValues();
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/self/stat?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
+    let url = `/api/log/self/stat?type=${currentLogType}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&group=${group}&vendor_profile_id=${vendor_profile_id}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -338,18 +324,13 @@ export const useLogsData = () => {
       channel,
       provider_key_id,
       group,
-      external_request_id,
       vendor_profile_id,
-      biz_line,
-      biz_scene,
-      user_tier,
-      feature,
       logType: formLogType,
     } = getFormValues();
     const currentLogType = formLogType !== undefined ? formLogType : logType;
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
+    let url = `/api/log/stat?type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&vendor_profile_id=${vendor_profile_id}`;
     url = encodeURI(url);
     let res = await API.get(url);
     const { success, message, data } = res.data;
@@ -885,12 +866,7 @@ export const useLogsData = () => {
       provider_key_id,
       group,
       request_id,
-      external_request_id,
       vendor_profile_id,
-      biz_line,
-      biz_scene,
-      user_tier,
-      feature,
       logType: formLogType,
     } = getFormValues();
 
@@ -903,7 +879,7 @@ export const useLogsData = () => {
 
     let localStartTimestamp = Date.parse(start_timestamp) / 1000;
     let localEndTimestamp = Date.parse(end_timestamp) / 1000;
-    const extraParams = `&external_request_id=${external_request_id}&vendor_profile_id=${vendor_profile_id}&biz_line=${biz_line}&biz_scene=${biz_scene}&user_tier=${user_tier}&feature=${feature}`;
+    const extraParams = `&vendor_profile_id=${vendor_profile_id}`;
     if (isAdminUser) {
       url = `/api/log/?p=${startIdx}&page_size=${pageSize}&type=${currentLogType}&username=${username}&token_name=${token_name}&model_name=${model_name}&start_timestamp=${localStartTimestamp}&end_timestamp=${localEndTimestamp}&channel=${channel}&provider_key_id=${provider_key_id}&group=${group}&request_id=${request_id}${extraParams}`;
     } else {

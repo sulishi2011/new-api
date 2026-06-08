@@ -74,11 +74,11 @@ func TestGetPagedProviderKeysIncludesUsageAndChannels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to list provider keys: %v", err)
 	}
-	if total != 2 {
-		t.Fatalf("expected total=2, got %d", total)
+	if total != 1 {
+		t.Fatalf("expected total=1, got %d", total)
 	}
-	if len(items) != 2 {
-		t.Fatalf("expected 2 items, got %d", len(items))
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
 	}
 
 	var item *ProviderKeyListItem
@@ -143,7 +143,9 @@ func TestGetPagedProviderKeysIncludesCurrentChannelKeysWithoutLogs(t *testing.T)
 		t.Fatalf("failed to create channel: %v", err)
 	}
 
-	items, total, err := GetPagedProviderKeys("", 0, 10)
+	items, total, err := GetPagedProviderKeys("", 0, 10, ProviderKeyListOptions{
+		SyncFromChannels: true,
+	})
 	if err != nil {
 		t.Fatalf("failed to list provider keys: %v", err)
 	}
@@ -161,5 +163,30 @@ func TestGetPagedProviderKeysIncludesCurrentChannelKeysWithoutLogs(t *testing.T)
 	}
 	if items[0].RequestCount != 0 {
 		t.Fatalf("expected request count 0, got %d", items[0].RequestCount)
+	}
+}
+
+func TestGetPagedProviderKeysDoesNotSyncChannelKeysByDefault(t *testing.T) {
+	setupProviderKeyTestDB(t)
+
+	channel := &Channel{
+		Name:   "channel-only",
+		Key:    "channel-only-key",
+		Group:  "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	if err := DB.Create(channel).Error; err != nil {
+		t.Fatalf("failed to create channel: %v", err)
+	}
+
+	items, total, err := GetPagedProviderKeys("", 0, 10)
+	if err != nil {
+		t.Fatalf("failed to list provider keys: %v", err)
+	}
+	if total != 0 {
+		t.Fatalf("expected total=0, got %d", total)
+	}
+	if len(items) != 0 {
+		t.Fatalf("expected 0 items, got %d", len(items))
 	}
 }
