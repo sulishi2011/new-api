@@ -18,7 +18,7 @@ func formatNotifyType(channelId int, status int) string {
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
 	channelLabel := formatChannelLabel(channelError)
-	common.SysLog(fmt.Sprintf("%s 发生错误，准备禁用，原因：%s", channelLabel, reason))
+	common.SysLog(fmt.Sprintf("%s 发生错误，准备禁用，原因：%s", channelLabel, common.LocalLogPreview(reason)))
 
 	// 检查是否启用自动禁用功能
 	if !channelError.AutoBan {

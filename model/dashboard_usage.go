@@ -477,11 +477,12 @@ func listDashboardUsageRows(query DashboardUsageQuery) ([]dashboardUsageAggregat
 	rowGroups := make([][]dashboardUsageAggregate, 0, len(ranges))
 	for _, tableRange := range ranges {
 		var rows []dashboardUsageAggregate
-		buildQuery := func(db *gorm.DB) *gorm.DB {
-			return buildDashboardUsageBaseQuery(db, tableRange, query, modelNamePattern).
+		buildQuery := func(db *gorm.DB) (*gorm.DB, error) {
+			tx := buildDashboardUsageBaseQuery(db, tableRange, query, modelNamePattern).
 				Select(strings.Join(selectFields, ", ")).
 				Group(bucketExpr + ", " + groupPart).
 				Order("created_at ASC")
+			return tx, nil
 		}
 		if err := scanLogReadWithPrimaryFallback("dashboard usage rows", buildQuery, &rows); err != nil {
 			return nil, err

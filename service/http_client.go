@@ -155,6 +155,7 @@ func newRelayHTTPTransport(proxyURL string, responseHeaderTimeout time.Duration)
 	transport := &http.Transport{
 		MaxIdleConns:          common.RelayMaxIdleConns,
 		MaxIdleConnsPerHost:   common.RelayMaxIdleConnsPerHost,
+		IdleConnTimeout:       time.Duration(common.RelayIdleConnTimeout) * time.Second,
 		ForceAttemptHTTP2:     true,
 		ResponseHeaderTimeout: responseHeaderTimeout,
 	}

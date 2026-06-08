@@ -145,15 +145,13 @@ function PerformanceOverviewFallback() {
 
 const SECTION_META: Record<
   DashboardSectionId,
-  { titleKey: string; descriptionKey: string }
+  { titleKey: string; descriptionKey?: string }
 > = {
   overview: {
     titleKey: 'Overview',
-    descriptionKey: 'View dashboard overview and statistics',
   },
   models: {
     titleKey: 'Model Call Analytics',
-    descriptionKey: 'View model call count analytics and charts',
   },
   'usage-summary': {
     titleKey: 'Usage Summary',
@@ -162,7 +160,6 @@ const SECTION_META: Record<
   },
   users: {
     titleKey: 'User Analytics',
-    descriptionKey: 'View user consumption statistics and charts',
   },
 }
 
@@ -260,16 +257,13 @@ export function Dashboard() {
   return (
     <SectionPageLayout>
       <SectionPageLayout.Title>{t(meta.titleKey)}</SectionPageLayout.Title>
-      <SectionPageLayout.Description>
-        {t(meta.descriptionKey)}
-      </SectionPageLayout.Description>
       <SectionPageLayout.Content>
         <div className='space-y-3 sm:space-y-4'>
           {activeSection !== 'overview' && (
             <div className='flex flex-wrap items-center justify-between gap-1.5 sm:gap-2'>
               {showSectionTabs ? (
                 <Tabs value={activeSection} onValueChange={handleSectionChange}>
-                  <TabsList className='h-auto max-w-full flex-wrap justify-start'>
+                  <TabsList className='max-w-full flex-wrap justify-start group-data-horizontal/tabs:h-auto'>
                     {visibleSections.map((section) => (
                       <TabsTrigger key={section} value={section}>
                         {t(SECTION_META[section].titleKey)}

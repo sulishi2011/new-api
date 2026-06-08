@@ -30,7 +30,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'behavior',
     titleKey: 'System Behavior',
-    descriptionKey: 'Configure system-wide behavior and defaults',
     build: (settings: OperationsSettings) => (
       <SystemBehaviorSection
         defaultValues={{
@@ -45,7 +44,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'monitoring',
     titleKey: 'Monitoring & Alerts',
-    descriptionKey: 'Configure channel monitoring and automation',
     build: (settings: OperationsSettings) => (
       <MonitoringSettingsSection
         defaultValues={{
@@ -89,7 +87,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'email',
     titleKey: 'SMTP Email',
-    descriptionKey: 'Configure SMTP email settings',
     build: (settings: OperationsSettings) => (
       <EmailSettingsSection
         defaultValues={{
@@ -107,7 +104,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'worker',
     titleKey: 'Worker Proxy',
-    descriptionKey: 'Configure worker service settings',
     build: (settings: OperationsSettings) => (
       <WorkerSettingsSection
         defaultValues={{
@@ -122,7 +118,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'logs',
     titleKey: 'Log Maintenance',
-    descriptionKey: 'Configure log consumption settings',
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
@@ -132,7 +127,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'performance',
     titleKey: 'Performance',
-    descriptionKey: 'Disk cache, system monitoring and performance stats',
     build: (settings: OperationsSettings) => (
       <PerformanceSection
         defaultValues={{
@@ -167,7 +161,6 @@ const OPERATIONS_SECTIONS = [
   {
     id: 'update-checker',
     titleKey: 'System maintenance',
-    descriptionKey: 'Check for system updates',
     build: (
       _settings: OperationsSettings,
       currentVersion?: string | null,
@@ -199,3 +192,4 @@ export const OPERATIONS_DEFAULT_SECTION = operationsRegistry.defaultSection
 export const getOperationsSectionNavItems =
   operationsRegistry.getSectionNavItems
 export const getOperationsSectionContent = operationsRegistry.getSectionContent
+export const getOperationsSectionMeta = operationsRegistry.getSectionMeta
