@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"net/http/httptest"
 	"testing"
 
@@ -79,4 +80,28 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestAutomaticChannelTestPassedRequiresNoLocalError(t *testing.T) {
+	outcome := automaticChannelTestOutcome{
+		result: testResult{
+			localErr: errors.New("local setup failed"),
+		},
+	}
+
+	require.False(t, automaticChannelTestPassed(outcome))
+}
+
+func TestEvaluateAutomaticChannelTestResultMarksSlowResponseAsFailed(t *testing.T) {
+	originalEnabled := common.AutomaticDisableChannelEnabled
+	t.Cleanup(func() {
+		common.AutomaticDisableChannelEnabled = originalEnabled
+	})
+
+	common.AutomaticDisableChannelEnabled = true
+	newAPIError, shouldBan := evaluateAutomaticChannelTestResult(testResult{}, 2000, 1000, "")
+
+	require.True(t, shouldBan)
+	require.NotNil(t, newAPIError)
+	require.Equal(t, types.ErrorCodeChannelResponseTimeExceeded, newAPIError.GetErrorCode())
 }

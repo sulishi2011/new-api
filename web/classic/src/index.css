@@ -977,6 +977,70 @@ html.dark .with-pastel-balls::before {
   padding: 10px !important;
 }
 
+@media (max-width: 767px) {
+  .semi-button-size-small {
+    min-height: 32px;
+  }
+
+  .semi-button-size-small.semi-button-with-icon,
+  .semi-button-size-small.semi-button-with-icon-only,
+  .semi-button-size-small.semi-button-with-icon-on {
+    min-width: 32px;
+  }
+
+  .classic-mobile-actions-toggle.semi-button-size-small {
+    min-height: 34px;
+  }
+
+  .classic-mobile-card-row {
+    width: 100%;
+  }
+
+  .classic-mobile-card-cell {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .classic-mobile-card-cell > * {
+    max-width: 100%;
+  }
+
+  .classic-mobile-card-cell > span {
+    display: block;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .classic-mobile-card-cell .semi-space {
+    max-width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .classic-mobile-card-cell .semi-tag {
+    max-width: 100%;
+  }
+
+  .classic-mobile-card-cell .semi-tag-content,
+  .classic-mobile-card-cell .semi-tag-content-ellipsis {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .classic-mobile-card-cell .semi-input-wrapper {
+    max-width: 100%;
+  }
+
+  .classic-mobile-card-cell .semi-input-wrapper-small,
+  .classic-mobile-card-cell .semi-input-small {
+    min-height: 32px;
+    height: 32px;
+  }
+}
+
 /* ==================== 使用日志: channel affinity tag ==================== */
 .semi-tag.channel-affinity-tag {
   border: 1px solid rgba(var(--semi-cyan-5), 0.35);

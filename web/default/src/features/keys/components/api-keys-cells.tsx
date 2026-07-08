@@ -76,14 +76,14 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   }, [resolvedFullKey, resolveRealKey, apiKey.id, markKeyCopied, t])
 
   return (
-    <div className='flex items-center'>
+    <div className='flex min-w-0 items-center'>
       <Popover open={popoverOpen} onOpenChange={handlePopoverOpen}>
         <PopoverTrigger
           render={
             <Button
               variant='ghost'
               size='sm'
-              className='text-muted-foreground h-7 font-mono text-xs'
+              className='text-muted-foreground h-7 min-w-0 flex-1 truncate font-mono text-xs'
             />
           }
         >

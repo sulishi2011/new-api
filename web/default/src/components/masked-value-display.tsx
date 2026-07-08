@@ -42,11 +42,15 @@ interface MaskedValueDisplayProps {
  */
 export function MaskedValueDisplay(props: MaskedValueDisplayProps) {
   return (
-    <div className='flex items-center'>
+    <div className='flex min-w-0 items-center'>
       <Popover>
         <PopoverTrigger
           render={
-            <Button variant='ghost' size='sm' className='h-7 font-mono' />
+            <Button
+              variant='ghost'
+              size='sm'
+              className='h-7 min-w-0 flex-1 truncate px-0 font-mono sm:px-2'
+            />
           }
         >
           {props.maskedValue}
@@ -68,7 +72,7 @@ export function MaskedValueDisplay(props: MaskedValueDisplayProps) {
       </Popover>
       <CopyButton
         value={props.fullValue}
-        className='size-7'
+        className='size-7 shrink-0'
         iconClassName='size-3.5'
         tooltip={props.copyTooltip}
         aria-label={props.copyAriaLabel}

@@ -104,6 +104,7 @@ const CardPro = ({
                 type='tertiary'
                 size='small'
                 theme='outline'
+                className='classic-mobile-actions-toggle'
                 block
               >
                 {showMobileActions ? t('隐藏操作项') : t('显示操作项')}

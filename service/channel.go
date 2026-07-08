@@ -50,6 +50,8 @@ func EnableChannel(channelId int, usingKey string, channelName string, vendorPro
 		subject := fmt.Sprintf("%s 已被启用", channelLabel)
 		content := fmt.Sprintf("%s 已被启用", channelLabel)
 		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
+		deleted := ClearChannelAffinityCacheAll()
+		common.SysLog(fmt.Sprintf("%s 已被启用，已清空渠道亲和性缓存 %d 条", channelLabel, deleted))
 	}
 }
 

@@ -96,7 +96,7 @@ const CardTable = ({
             return (
               <div
                 key={idx}
-                className='flex justify-between items-center py-1 border-b last:border-b-0 border-dashed'
+                className='flex min-w-0 justify-between items-center py-1 border-b last:border-b-0 border-dashed'
                 style={{ borderColor: 'var(--semi-color-border)' }}
               >
                 <Skeleton.Title active style={{ width: 80, height: 14 }} />
@@ -122,7 +122,7 @@ const CardTable = ({
     };
 
     return (
-      <div className='flex flex-col gap-2'>
+      <div className='classic-mobile-card-table flex flex-col gap-2'>
         {[1, 2, 3].map((i) => renderSkeletonCard(i))}
       </div>
     );
@@ -139,7 +139,10 @@ const CardTable = ({
       (!tableProps.rowExpandable || tableProps.rowExpandable(record));
 
     return (
-      <Card key={rowKeyVal} className='!rounded-2xl shadow-sm'>
+      <Card
+        key={rowKeyVal}
+        className='classic-mobile-row-card !rounded-2xl shadow-sm'
+      >
         {columns.map((col, colIdx) => {
           if (
             tableProps?.visibleColumns &&
@@ -155,7 +158,10 @@ const CardTable = ({
 
           if (!title) {
             return (
-              <div key={col.key || colIdx} className='mt-2 flex justify-end'>
+              <div
+                key={col.key || colIdx}
+                className='mt-2 flex min-w-0 flex-wrap justify-end gap-1'
+              >
                 {cellContent}
               </div>
             );
@@ -164,13 +170,13 @@ const CardTable = ({
           return (
             <div
               key={col.key || colIdx}
-              className='flex justify-between items-start py-1 border-b last:border-b-0 border-dashed'
+              className='classic-mobile-card-row flex min-w-0 justify-between items-start gap-2 py-1 border-b last:border-b-0 border-dashed'
               style={{ borderColor: 'var(--semi-color-border)' }}
             >
-              <span className='font-medium text-gray-600 mr-2 whitespace-nowrap select-none'>
+              <span className='max-w-[45%] shrink-0 font-medium text-gray-600 whitespace-nowrap select-none'>
                 {title}
               </span>
-              <div className='flex-1 break-all flex justify-end items-center gap-1'>
+              <div className='classic-mobile-card-cell min-w-0 flex-1 break-all flex flex-wrap justify-end items-center gap-1 text-right'>
                 {cellContent !== undefined && cellContent !== null
                   ? cellContent
                   : '-'}
@@ -214,7 +220,7 @@ const CardTable = ({
   }
 
   return (
-    <div className='flex flex-col gap-2'>
+    <div className='classic-mobile-card-table flex flex-col gap-2'>
       {dataSource.map((record, index) => (
         <MobileRowCard
           key={getRowKey(record, index)}

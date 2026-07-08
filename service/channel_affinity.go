@@ -80,14 +80,14 @@ type ChannelAffinityCacheStats struct {
 
 func getChannelAffinityCache() *cachex.HybridCache[int] {
 	channelAffinityCacheOnce.Do(func() {
-		setting := operation_setting.GetChannelAffinitySetting()
-		capacity := setting.MaxEntries
-		if capacity <= 0 {
-			capacity = 100_000
+		setting, ok := getChannelAffinitySettingSnapshot()
+		capacity := 100_000
+		defaultTTLSeconds := 3600
+		if ok && setting.MaxEntries > 0 {
+			capacity = setting.MaxEntries
 		}
-		defaultTTLSeconds := setting.DefaultTTLSeconds
-		if defaultTTLSeconds <= 0 {
-			defaultTTLSeconds = 3600
+		if ok && setting.DefaultTTLSeconds > 0 {
+			defaultTTLSeconds = setting.DefaultTTLSeconds
 		}
 
 		channelAffinityCache = cachex.NewHybridCache[int](cachex.HybridCacheConfig[int]{
@@ -109,8 +109,8 @@ func getChannelAffinityCache() *cachex.HybridCache[int] {
 }
 
 func GetChannelAffinityCacheStats() ChannelAffinityCacheStats {
-	setting := operation_setting.GetChannelAffinitySetting()
-	if setting == nil {
+	setting, ok := getChannelAffinitySettingSnapshot()
+	if !ok {
 		return ChannelAffinityCacheStats{
 			Enabled:    false,
 			Total:      0,
@@ -216,8 +216,8 @@ func ClearChannelAffinityCacheByRuleName(ruleName string) (int, error) {
 		return 0, fmt.Errorf("rule_name 不能为空")
 	}
 
-	setting := operation_setting.GetChannelAffinitySetting()
-	if setting == nil {
+	setting, ok := getChannelAffinitySettingSnapshot()
+	if !ok {
 		return 0, fmt.Errorf("channel_affinity_setting 未初始化")
 	}
 
@@ -434,15 +434,90 @@ func buildChannelAffinityKeyHint(s string) string {
 	return s[:4] + "..." + s[len(s)-4:]
 }
 
+// Option sync updates registered configs while holding OptionMapRWMutex; request
+// paths use a snapshot so maps and slices are never read while being refreshed.
+func getChannelAffinitySettingSnapshot() (operation_setting.ChannelAffinitySetting, bool) {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+
+	setting := operation_setting.GetChannelAffinitySetting()
+	if setting == nil {
+		return operation_setting.ChannelAffinitySetting{}, false
+	}
+	return cloneChannelAffinitySetting(*setting), true
+}
+
+func cloneChannelAffinitySetting(src operation_setting.ChannelAffinitySetting) operation_setting.ChannelAffinitySetting {
+	dst := src
+	if len(src.Rules) > 0 {
+		dst.Rules = make([]operation_setting.ChannelAffinityRule, len(src.Rules))
+		for i := range src.Rules {
+			dst.Rules[i] = cloneChannelAffinityRule(src.Rules[i])
+		}
+	}
+	return dst
+}
+
+func cloneChannelAffinityRule(src operation_setting.ChannelAffinityRule) operation_setting.ChannelAffinityRule {
+	dst := src
+	dst.ModelRegex = cloneStringSlice(src.ModelRegex)
+	dst.PathRegex = cloneStringSlice(src.PathRegex)
+	dst.UserAgentInclude = cloneStringSlice(src.UserAgentInclude)
+	if len(src.KeySources) > 0 {
+		dst.KeySources = make([]operation_setting.ChannelAffinityKeySource, len(src.KeySources))
+		copy(dst.KeySources, src.KeySources)
+	}
+	dst.ParamOverrideTemplate = cloneStringAnyMap(src.ParamOverrideTemplate)
+	return dst
+}
+
+func cloneStringSlice(src []string) []string {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]string, len(src))
+	copy(dst, src)
+	return dst
+}
+
 func cloneStringAnyMap(src map[string]interface{}) map[string]interface{} {
 	if len(src) == 0 {
 		return map[string]interface{}{}
 	}
 	dst := make(map[string]interface{}, len(src))
 	for k, v := range src {
-		dst[k] = v
+		dst[k] = cloneMapValue(v)
 	}
 	return dst
+}
+
+func cloneMapValue(v interface{}) interface{} {
+	switch typed := v.(type) {
+	case map[string]interface{}:
+		return cloneStringAnyMap(typed)
+	case []interface{}:
+		if len(typed) == 0 {
+			return []interface{}{}
+		}
+		dst := make([]interface{}, len(typed))
+		for i := range typed {
+			dst[i] = cloneMapValue(typed[i])
+		}
+		return dst
+	case []map[string]interface{}:
+		if len(typed) == 0 {
+			return []map[string]interface{}{}
+		}
+		dst := make([]map[string]interface{}, len(typed))
+		for i := range typed {
+			dst[i] = cloneStringAnyMap(typed[i])
+		}
+		return dst
+	case []string:
+		return cloneStringSlice(typed)
+	default:
+		return v
+	}
 }
 
 func mergeChannelOverride(base map[string]interface{}, tpl map[string]interface{}) map[string]interface{} {
@@ -548,8 +623,8 @@ func ApplyChannelAffinityOverrideTemplate(c *gin.Context, paramOverride map[stri
 }
 
 func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup string) (int, bool) {
-	setting := operation_setting.GetChannelAffinitySetting()
-	if setting == nil || !setting.Enabled {
+	setting, ok := getChannelAffinitySettingSnapshot()
+	if !ok || !setting.Enabled {
 		return 0, false
 	}
 	path := ""
@@ -666,8 +741,8 @@ func ClearCurrentChannelAffinityCache(c *gin.Context) bool {
 }
 
 func ShouldKeepChannelAffinityOnChannelDisabled() bool {
-	setting := operation_setting.GetChannelAffinitySetting()
-	if setting == nil {
+	setting, ok := getChannelAffinitySettingSnapshot()
+	if !ok {
 		return false
 	}
 	return setting.KeepOnChannelDisabled
@@ -714,8 +789,8 @@ func RecordChannelAffinity(c *gin.Context, channelID int) {
 	if channelID <= 0 {
 		return
 	}
-	setting := operation_setting.GetChannelAffinitySetting()
-	if setting == nil || !setting.Enabled {
+	setting, ok := getChannelAffinitySettingSnapshot()
+	if !ok || !setting.Enabled {
 		return
 	}
 	if setting.SwitchOnSuccess && c != nil {
@@ -965,10 +1040,10 @@ func usageTotalTokens(usage *dto.Usage) int {
 
 func getChannelAffinityUsageCacheStatsCache() *cachex.HybridCache[ChannelAffinityUsageCacheCounters] {
 	channelAffinityUsageCacheStatsOnce.Do(func() {
-		setting := operation_setting.GetChannelAffinitySetting()
+		setting, ok := getChannelAffinitySettingSnapshot()
 		capacity := 100_000
 		defaultTTLSeconds := 3600
-		if setting != nil {
+		if ok {
 			if setting.MaxEntries > 0 {
 				capacity = setting.MaxEntries
 			}

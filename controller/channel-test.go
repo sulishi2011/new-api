@@ -43,6 +43,15 @@ type testResult struct {
 	newAPIError *types.NewAPIError
 }
 
+const automaticChannelRecoveryRequiredSuccesses = 10
+
+type automaticChannelTestOutcome struct {
+	result           testResult
+	milliseconds     int64
+	newAPIError      *types.NewAPIError
+	shouldBanChannel bool
+}
+
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
@@ -673,6 +682,71 @@ func shouldUseStreamForAutomaticChannelTest(channel *model.Channel) bool {
 	return channel != nil && channel.Type == constant.ChannelTypeCodex
 }
 
+func runAutomaticChannelTest(channel *model.Channel, testUserID int, disableThreshold int64) automaticChannelTestOutcome {
+	tik := time.Now()
+	result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	milliseconds := time.Since(tik).Milliseconds()
+	newAPIError, shouldBanChannel := evaluateAutomaticChannelTestResult(result, milliseconds, disableThreshold, channel.GetAutoDisablePolicyGroup())
+
+	return automaticChannelTestOutcome{
+		result:           result,
+		milliseconds:     milliseconds,
+		newAPIError:      newAPIError,
+		shouldBanChannel: shouldBanChannel,
+	}
+}
+
+func evaluateAutomaticChannelTestResult(result testResult, milliseconds int64, disableThreshold int64, autoDisablePolicyGroup string) (*types.NewAPIError, bool) {
+	shouldBanChannel := false
+	newAPIError := result.newAPIError
+	if newAPIError != nil {
+		shouldBanChannel = service.ShouldDisableChannel(newAPIError, autoDisablePolicyGroup)
+	}
+
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
+		if milliseconds > disableThreshold {
+			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
+			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
+			shouldBanChannel = true
+		}
+	}
+
+	return newAPIError, shouldBanChannel
+}
+
+func automaticChannelTestPassed(outcome automaticChannelTestOutcome) bool {
+	return outcome.result.localErr == nil && outcome.newAPIError == nil
+}
+
+func runChannelRecoveryTests(channel *model.Channel, testUserID int, disableThreshold int64, first automaticChannelTestOutcome) (bool, automaticChannelTestOutcome, int) {
+	last := first
+	if !automaticChannelTestPassed(last) {
+		return false, last, 1
+	}
+
+	for attempt := 2; attempt <= automaticChannelRecoveryRequiredSuccesses; attempt++ {
+		if common.RequestInterval > 0 {
+			time.Sleep(common.RequestInterval)
+		}
+		last = runAutomaticChannelTest(channel, testUserID, disableThreshold)
+		if !automaticChannelTestPassed(last) {
+			return false, last, attempt
+		}
+	}
+
+	return true, last, automaticChannelRecoveryRequiredSuccesses
+}
+
+func channelRecoveryFailureReason(outcome automaticChannelTestOutcome) string {
+	if outcome.newAPIError != nil {
+		return outcome.newAPIError.Error()
+	}
+	if outcome.result.localErr != nil {
+		return outcome.result.localErr.Error()
+	}
+	return "unknown error"
+}
+
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	if len(jsonBytes) == 0 {
 		return ""
@@ -936,38 +1010,25 @@ func testAllChannels(notify bool) error {
 				continue
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
-			tik := time.Now()
-			result := testChannel(channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
-			tok := time.Now()
-			milliseconds := tok.Sub(tik).Milliseconds()
-
-			shouldBanChannel := false
-			newAPIError := result.newAPIError
-			// request error disables the channel
-			if newAPIError != nil {
-				shouldBanChannel = service.ShouldDisableChannel(result.newAPIError, channel.GetAutoDisablePolicyGroup())
-			}
-
-			// 当错误检查通过，才检查响应时间
-			if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
-				if milliseconds > disableThreshold {
-					err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
-					newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
-					shouldBanChannel = true
-				}
-			}
+			outcome := runAutomaticChannelTest(channel, testUserID, disableThreshold)
 
 			// disable channel
-			if isChannelEnabled && shouldBanChannel && channel.GetAutoBan() {
-				processChannelError(result.context, nil, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()), newAPIError)
+			if isChannelEnabled && outcome.shouldBanChannel && channel.GetAutoBan() {
+				processChannelError(outcome.result.context, nil, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(outcome.result.context, constant.ContextKeyChannelKey), channel.GetAutoBan(), channel.GetVendorProfileCode(), channel.GetAutoDisablePolicyGroup()), outcome.newAPIError)
 			}
 
 			// enable channel
-			if !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status, channel.GetSetting()) {
-				service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name, channel.GetVendorProfileCode())
+			if !isChannelEnabled && automaticChannelTestPassed(outcome) && service.ShouldEnableChannel(outcome.newAPIError, channel.Status, channel.GetSetting()) {
+				recovered, lastOutcome, attempts := runChannelRecoveryTests(channel, testUserID, disableThreshold, outcome)
+				outcome = lastOutcome
+				if recovered {
+					service.EnableChannel(channel.Id, common.GetContextKeyString(outcome.result.context, constant.ContextKeyChannelKey), channel.Name, channel.GetVendorProfileCode())
+				} else {
+					common.SysLog(fmt.Sprintf("channel #%d recovery check failed at attempt %d/%d: %s", channel.Id, attempts, automaticChannelRecoveryRequiredSuccesses, common.LocalLogPreview(channelRecoveryFailureReason(outcome))))
+				}
 			}
 
-			channel.UpdateResponseTime(milliseconds)
+			channel.UpdateResponseTime(outcome.milliseconds)
 			time.Sleep(common.RequestInterval)
 		}
 
