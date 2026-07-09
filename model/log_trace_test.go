@@ -31,6 +31,7 @@ func setupLogTraceTestDB(t *testing.T) *gorm.DB {
 	}
 	DB = db
 	LOG_DB = db
+	resetLogTableCaches()
 	LOG_READ_DB = db
 
 	if err := db.AutoMigrate(&Log{}, &LogTrace{}); err != nil {
@@ -40,6 +41,7 @@ func setupLogTraceTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		DB = oldDB
 		LOG_DB = oldLogDB
+		resetLogTableCaches()
 		LOG_READ_DB = oldLogReadDB
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
@@ -223,6 +225,44 @@ func TestPrepareLogTraceBatchItemPreservesMetadata(t *testing.T) {
 	}
 	if !prepared.Record.RequestTruncated {
 		t.Fatalf("expected request truncation metadata")
+	}
+}
+
+func TestCleanupExpiredLogTracesDeletesRows(t *testing.T) {
+	db := setupLogTraceTestDB(t)
+
+	traces := []LogTrace{
+		{LogId: 1, ExpiresAt: 500, Status: LogTraceStatusStored},
+		{LogId: 2, ExpiresAt: 600, Status: LogTraceStatusExpired},
+		{LogId: 3, ExpiresAt: 1500, Status: LogTraceStatusStored},
+		{LogId: 4, ExpiresAt: 0, Status: LogTraceStatusPending},
+	}
+	if err := db.Create(&traces).Error; err != nil {
+		t.Fatalf("failed to seed log traces: %v", err)
+	}
+
+	count, err := CleanupExpiredLogTraces(context.Background(), 1000, 10)
+	if err != nil {
+		t.Fatalf("cleanup failed: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("expected 2 deleted rows, got %d", count)
+	}
+
+	var remaining []LogTrace
+	if err := db.Order("log_id asc").Find(&remaining).Error; err != nil {
+		t.Fatalf("failed to query remaining traces: %v", err)
+	}
+	if len(remaining) != 2 || remaining[0].LogId != 3 || remaining[1].LogId != 4 {
+		t.Fatalf("unexpected remaining traces: %#v", remaining)
+	}
+
+	count, err = CleanupExpiredLogTraces(context.Background(), 1000, 10)
+	if err != nil {
+		t.Fatalf("second cleanup failed: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no rows on second cleanup, got %d", count)
 	}
 }
 

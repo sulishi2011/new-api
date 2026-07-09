@@ -29,6 +29,7 @@ func setupUsageAggregateTestDB(t *testing.T) *gorm.DB {
 	}
 	DB = db
 	LOG_DB = db
+	resetLogTableCaches()
 
 	if err := db.AutoMigrate(&UsageLedger{}, &UsageAggregateHourly{}, &UsageAggregateDaily{}, &UsageAggregationJob{}); err != nil {
 		t.Fatalf("failed to migrate usage aggregate tables: %v", err)
@@ -37,6 +38,7 @@ func setupUsageAggregateTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() {
 		DB = oldDB
 		LOG_DB = oldLogDB
+		resetLogTableCaches()
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
 		common.UsingPostgreSQL = oldUsingPostgreSQL

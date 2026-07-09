@@ -223,6 +223,11 @@ func InitEnv() {
 	if LogCleanupBatchSleepMS < 0 {
 		LogCleanupBatchSleepMS = 0
 	}
+	LogCleanupRunMaxSeconds = GetEnvOrDefault("LOG_CLEANUP_RUN_MAX_SECONDS", LogCleanupRunMaxSeconds)
+	if LogCleanupRunMaxSeconds < 1 {
+		SysError("LOG_CLEANUP_RUN_MAX_SECONDS must be positive, using default value: 600")
+		LogCleanupRunMaxSeconds = 600
+	}
 
 	// Initialize string variables with GetEnvOrDefaultString
 	GeminiSafetySetting = GetEnvOrDefaultString("GEMINI_SAFETY_SETTING", "BLOCK_NONE")

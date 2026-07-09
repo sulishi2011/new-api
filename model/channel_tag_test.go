@@ -40,6 +40,7 @@ func setupChannelTagTestDB(t *testing.T) {
 	}
 	DB = db
 	LOG_DB = db
+	resetLogTableCaches()
 
 	if err := db.AutoMigrate(&Channel{}, &Ability{}, &VendorProfile{}); err != nil {
 		t.Fatalf("failed to migrate channel tag test tables: %v", err)
@@ -48,6 +49,7 @@ func setupChannelTagTestDB(t *testing.T) {
 	t.Cleanup(func() {
 		DB = oldDB
 		LOG_DB = oldLogDB
+		resetLogTableCaches()
 		common.UsingSQLite = oldUsingSQLite
 		common.UsingMySQL = oldUsingMySQL
 		common.UsingPostgreSQL = oldUsingPostgreSQL

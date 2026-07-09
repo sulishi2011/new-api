@@ -828,25 +828,47 @@ func hydrateTracePartFullBody(ctx context.Context, part map[string]interface{}) 
 	}
 }
 
+// logTraceCleanupStatuses covers every status an expired row may carry,
+// including "expired" rows left behind by the old mark-only cleanup.
+var logTraceCleanupStatuses = []string{
+	LogTraceStatusStored,
+	LogTraceStatusPending,
+	LogTraceStatusUploadFailed,
+	LogTraceStatusExpired,
+}
+
+// CleanupExpiredLogTraces deletes one batch of expired trace metadata rows.
+// It queries one status at a time so the (status, expires_at) composite index
+// serves each probe as equality + range, and deliberately has no ORDER BY:
+// any expired rows will do, and an ordered multi-status scan costs O(backlog)
+// per batch instead of O(limit). The S3 objects themselves are expired by
+// bucket lifecycle rules, not here.
 func CleanupExpiredLogTraces(ctx context.Context, now int64, limit int) (int64, error) {
 	if limit <= 0 {
 		limit = 100
 	}
-	var ids []int
-	err := LOG_DB.WithContext(ctx).Model(&LogTrace{}).
-		Where("expires_at > 0 AND expires_at < ? AND status IN ?", now, []string{LogTraceStatusStored, LogTraceStatusPending, LogTraceStatusUploadFailed}).
-		Order("expires_at asc, id asc").
-		Limit(limit).
-		Pluck("id", &ids).Error
-	if err != nil {
-		return 0, err
+	var total int64
+	for _, status := range logTraceCleanupStatuses {
+		remaining := limit - int(total)
+		if remaining <= 0 {
+			break
+		}
+		var ids []int
+		err := LOG_DB.WithContext(ctx).Model(&LogTrace{}).
+			Where("status = ? AND expires_at > 0 AND expires_at < ?", status, now).
+			Limit(remaining).
+			Pluck("id", &ids).Error
+		if err != nil {
+			return total, err
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		result := LOG_DB.WithContext(ctx).Where("id IN ?", ids).Delete(&LogTrace{})
+		if result.Error != nil {
+			return total, result.Error
+		}
+		total += result.RowsAffected
 	}
-	if len(ids) == 0 {
-		return 0, nil
-	}
-	result := LOG_DB.WithContext(ctx).Model(&LogTrace{}).Where("id IN ?", ids).Updates(map[string]interface{}{
-		"status":     LogTraceStatusExpired,
-		"updated_at": common.GetTimestamp(),
-	})
-	return result.RowsAffected, result.Error
+	return total, nil
 }

@@ -113,6 +113,7 @@ var LogRetentionRefundDays = 0
 var LogCleanupIntervalHours = 24
 var LogCleanupBatchSize = 300
 var LogCleanupBatchSleepMS = 200
+var LogCleanupRunMaxSeconds = 600
 
 // Any options with "Secret", "Token" in its key won't be return by GetOptions
 

@@ -61,11 +61,18 @@ func runLogRetentionOnce() {
 	cleanupExpiredTraceMetadata(ctx, now)
 }
 
+// logCleanupBatchTimeout caps a single cleanup query so a slow batch cannot
+// hold the database for minutes; the remainder is picked up by the next run.
+const logCleanupBatchTimeout = 30 * time.Second
+
 func cleanupExpiredTraceMetadata(ctx context.Context, now time.Time) {
 	batchSize := common.LogCleanupBatchSize
+	deadline := time.Now().Add(time.Duration(common.LogCleanupRunMaxSeconds) * time.Second)
 	var total int64
 	for {
-		count, err := model.CleanupExpiredLogTraces(ctx, now.Unix(), batchSize)
+		batchCtx, cancel := context.WithTimeout(ctx, logCleanupBatchTimeout)
+		count, err := model.CleanupExpiredLogTraces(batchCtx, now.Unix(), batchSize)
+		cancel()
 		if err != nil {
 			logger.LogWarn(ctx, fmt.Sprintf("cleanup expired log traces failed: %v", err))
 			return
@@ -74,10 +81,14 @@ func cleanupExpiredTraceMetadata(ctx context.Context, now time.Time) {
 		if count < int64(batchSize) {
 			break
 		}
+		if time.Now().After(deadline) {
+			logger.LogInfo(ctx, fmt.Sprintf("log trace cleanup run budget exhausted, deleted=%d so far, remainder deferred to next run", total))
+			return
+		}
 		sleepLogCleanupBatch()
 	}
 	if total > 0 {
-		logger.LogInfo(ctx, fmt.Sprintf("marked expired log traces: count=%d", total))
+		logger.LogInfo(ctx, fmt.Sprintf("deleted expired log traces: count=%d", total))
 	}
 }
 

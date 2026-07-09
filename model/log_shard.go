@@ -19,9 +19,26 @@ const (
 
 var (
 	ensuredLogTables sync.Map
+	// existingLogTables caches positive HasTable checks on the read path so we
+	// don't hit information_schema on every query. Negative results are not
+	// cached: the current month's shard may be created at any moment.
+	existingLogTables sync.Map
 
 	ErrLogCrossMonthQuery = errors.New("日志分表后最多支持跨 2 张连续月表查询，请缩小时间范围")
 )
+
+// resetLogTableCaches clears the table-existence caches. Only for tests,
+// which swap LOG_DB between in-memory databases within one process.
+func resetLogTableCaches() {
+	ensuredLogTables.Range(func(key, _ any) bool {
+		ensuredLogTables.Delete(key)
+		return true
+	})
+	existingLogTables.Range(func(key, _ any) bool {
+		existingLogTables.Delete(key)
+		return true
+	})
+}
 
 type logReadTableRange struct {
 	TableName      string
@@ -85,7 +102,14 @@ func existingLogReadTable(tableName string) string {
 	if tableName == "" {
 		return baseLogTableName
 	}
+	if _, ok := ensuredLogTables.Load(tableName); ok {
+		return tableName
+	}
+	if _, ok := existingLogTables.Load(tableName); ok {
+		return tableName
+	}
 	if logReadDB().Migrator().HasTable(tableName) {
+		existingLogTables.Store(tableName, struct{}{})
 		return tableName
 	}
 	return baseLogTableName
@@ -185,9 +209,7 @@ func resolveLogReadTableRanges(startTimestamp int64, endTimestamp int64) ([]logR
 func ensureLogTableForTimestamp(timestamp int64) (string, error) {
 	tableName := logTableNameForTimestamp(timestamp)
 	if _, ok := ensuredLogTables.Load(tableName); ok {
-		if LOG_DB.Migrator().HasTable(tableName) {
-			return tableName, nil
-		}
+		return tableName, nil
 	}
 	if LOG_DB.Migrator().HasTable(tableName) {
 		if err := migrateLogShardIndexes(LOG_DB, tableName); err != nil {
