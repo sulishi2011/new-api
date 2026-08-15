@@ -163,6 +163,7 @@ const defaultMonitoringInputs = {
   'monitor_setting.channel_disabled_webhook_url': '',
   'monitor_setting.channel_disabled_webhook_secret': '',
   'monitor_setting.auto_test_channel_enabled': false,
+  'monitor_setting.auto_test_channel_recovery_enabled': false,
   'monitor_setting.auto_test_channel_minutes': 10,
 };
 
@@ -492,6 +493,23 @@ export default function SettingsMonitoring(props) {
                     setInputs({
                       ...inputs,
                       'monitor_setting.auto_test_channel_enabled': value,
+                    })
+                  }
+                />
+              </Col>
+              <Col xs={24} sm={12} md={8} lg={8} xl={8}>
+                <Form.Switch
+                  field={'monitor_setting.auto_test_channel_recovery_enabled'}
+                  label={t('定时测试渠道级恢复通道')}
+                  size='default'
+                  checkedText='｜'
+                  uncheckedText='〇'
+                  extraText={t('仅检测自动禁用且已单独启用自动恢复的渠道')}
+                  onChange={(value) =>
+                    setInputs({
+                      ...inputs,
+                      'monitor_setting.auto_test_channel_recovery_enabled':
+                        value,
                     })
                   }
                 />

@@ -73,6 +73,7 @@ const monitoringSchema = z
     AutomaticRetryStatusCodes: z.string(),
     monitor_setting: z.object({
       auto_test_channel_enabled: z.boolean(),
+      auto_test_channel_recovery_enabled: z.boolean(),
       auto_test_channel_minutes: z.coerce
         .number()
         .int()
@@ -186,6 +187,7 @@ type MonitoringSettingsSectionProps = {
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
     'monitor_setting.auto_test_channel_enabled': boolean
+    'monitor_setting.auto_test_channel_recovery_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_failure_rate_disable_enabled': boolean
     'monitor_setting.channel_failure_rate_window_minutes': number
@@ -214,6 +216,7 @@ type NormalizedMonitoringValues = {
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
+  'monitor_setting.auto_test_channel_recovery_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_failure_rate_disable_enabled': boolean
   'monitor_setting.channel_failure_rate_window_minutes': number
@@ -250,6 +253,8 @@ const buildFormDefaults = (
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
+    auto_test_channel_recovery_enabled:
+      defaults['monitor_setting.auto_test_channel_recovery_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
     channel_failure_rate_disable_enabled:
@@ -296,6 +301,8 @@ const normalizeDefaults = (
   ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
+  'monitor_setting.auto_test_channel_recovery_enabled':
+    defaults['monitor_setting.auto_test_channel_recovery_enabled'],
   'monitor_setting.auto_test_channel_minutes':
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_failure_rate_disable_enabled':
@@ -345,6 +352,8 @@ const normalizeFormValues = (
   ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
+  'monitor_setting.auto_test_channel_recovery_enabled':
+    values.monitor_setting.auto_test_channel_recovery_enabled,
   'monitor_setting.auto_test_channel_minutes':
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_failure_rate_disable_enabled':
@@ -601,6 +610,31 @@ export function MonitoringSettingsSection({
                     <FormLabel>{t('Scheduled channel tests')}</FormLabel>
                     <FormDescription>
                       {t('Automatically probe all channels in the background')}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='monitor_setting.auto_test_channel_recovery_enabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>
+                      {t('Scheduled channel recovery tests')}
+                    </FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Probe auto-disabled channels with channel-level recovery enabled'
+                      )}
                     </FormDescription>
                   </SettingsSwitchContent>
                   <FormControl>

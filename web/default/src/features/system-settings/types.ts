@@ -283,6 +283,7 @@ export type OperationsSettings = {
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
+  'monitor_setting.auto_test_channel_recovery_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_failure_rate_disable_enabled': boolean
   'monitor_setting.channel_failure_rate_window_minutes': number

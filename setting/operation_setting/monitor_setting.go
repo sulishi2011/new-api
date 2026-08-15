@@ -9,6 +9,7 @@ import (
 
 type MonitorSetting struct {
 	AutoTestChannelEnabled           bool    `json:"auto_test_channel_enabled"`
+	AutoTestChannelRecoveryEnabled   bool    `json:"auto_test_channel_recovery_enabled"`
 	AutoTestChannelMinutes           float64 `json:"auto_test_channel_minutes"`
 	ChannelFailureRateDisableEnabled bool    `json:"channel_failure_rate_disable_enabled"`
 	ChannelFailureRateWindowMinutes  int     `json:"channel_failure_rate_window_minutes"`

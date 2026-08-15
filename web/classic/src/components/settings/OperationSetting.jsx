@@ -85,6 +85,7 @@ const OperationSetting = () => {
     'monitor_setting.channel_disabled_webhook_url': '',
     'monitor_setting.channel_disabled_webhook_secret': '',
     'monitor_setting.auto_test_channel_enabled': false,
+    'monitor_setting.auto_test_channel_recovery_enabled': false,
     'monitor_setting.auto_test_channel_minutes': 10 /* 签到设置 */,
     'checkin_setting.enabled': false,
     'checkin_setting.min_quota': 1000,

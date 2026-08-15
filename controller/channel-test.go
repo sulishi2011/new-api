@@ -52,6 +52,13 @@ type automaticChannelTestOutcome struct {
 	shouldBanChannel bool
 }
 
+type automaticChannelTestScope int
+
+const (
+	automaticChannelTestScopeAll automaticChannelTestScope = iota
+	automaticChannelTestScopeChannelLevelRecovery
+)
+
 func normalizeChannelTestEndpoint(channel *model.Channel, modelName, endpointType string) string {
 	normalized := strings.TrimSpace(endpointType)
 	if normalized != "" {
@@ -747,6 +754,24 @@ func channelRecoveryFailureReason(outcome automaticChannelTestOutcome) string {
 	return "unknown error"
 }
 
+func hasChannelLevelAutoRecoveryEnabled(channel *model.Channel) bool {
+	if channel == nil {
+		return false
+	}
+	setting := channel.GetSetting()
+	return setting.AutoRecoveryEnabled != nil && *setting.AutoRecoveryEnabled
+}
+
+func shouldTestChannelForScope(channel *model.Channel, scope automaticChannelTestScope) bool {
+	if channel == nil || channel.Archived || channel.Status == common.ChannelStatusManuallyDisabled {
+		return false
+	}
+	if scope == automaticChannelTestScopeChannelLevelRecovery {
+		return channel.Status == common.ChannelStatusAutoDisabled && hasChannelLevelAutoRecoveryEnabled(channel)
+	}
+	return true
+}
+
 func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	if len(jsonBytes) == 0 {
 		return ""
@@ -974,6 +999,14 @@ var testAllChannelsLock sync.Mutex
 var testAllChannelsRunning bool = false
 
 func testAllChannels(notify bool) error {
+	return testChannels(notify, automaticChannelTestScopeAll)
+}
+
+func testChannelLevelRecoveries(notify bool) error {
+	return testChannels(notify, automaticChannelTestScopeChannelLevelRecovery)
+}
+
+func testChannels(notify bool, scope automaticChannelTestScope) error {
 	testUserID, err := resolveChannelTestUserID(nil)
 	if err != nil {
 		return err
@@ -1003,10 +1036,7 @@ func testAllChannels(notify bool) error {
 		}()
 
 		for _, channel := range channels {
-			if channel.Archived {
-				continue
-			}
-			if channel.Status == common.ChannelStatusManuallyDisabled {
+			if !shouldTestChannelForScope(channel, scope) {
 				continue
 			}
 			isChannelEnabled := channel.Status == common.ChannelStatusEnabled
@@ -1060,18 +1090,29 @@ func AutomaticallyTestChannels() {
 	}
 	autoTestChannelsOnce.Do(func() {
 		for {
-			if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
+			monitorSetting := operation_setting.GetMonitorSetting()
+			if !monitorSetting.AutoTestChannelEnabled && !monitorSetting.AutoTestChannelRecoveryEnabled {
 				time.Sleep(1 * time.Minute)
 				continue
 			}
 			for {
-				frequency := operation_setting.GetMonitorSetting().AutoTestChannelMinutes
+				monitorSetting := operation_setting.GetMonitorSetting()
+				frequency := monitorSetting.AutoTestChannelMinutes
 				time.Sleep(time.Duration(int(math.Round(frequency))) * time.Minute)
-				common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
-				common.SysLog("automatically testing all channels")
-				_ = testAllChannels(false)
-				common.SysLog("automatically channel test finished")
-				if !operation_setting.GetMonitorSetting().AutoTestChannelEnabled {
+				monitorSetting = operation_setting.GetMonitorSetting()
+				if monitorSetting.AutoTestChannelEnabled {
+					common.SysLog(fmt.Sprintf("automatically test channels with interval %f minutes", frequency))
+					common.SysLog("automatically testing all channels")
+					_ = testAllChannels(false)
+					common.SysLog("automatically channel test finished")
+				} else if monitorSetting.AutoTestChannelRecoveryEnabled {
+					common.SysLog(fmt.Sprintf("automatically test channel-level recoveries with interval %f minutes", frequency))
+					common.SysLog("automatically testing channel-level recovery channels")
+					_ = testChannelLevelRecoveries(false)
+					common.SysLog("automatically channel-level recovery test finished")
+				}
+				monitorSetting = operation_setting.GetMonitorSetting()
+				if !monitorSetting.AutoTestChannelEnabled && !monitorSetting.AutoTestChannelRecoveryEnabled {
 					break
 				}
 			}

@@ -26,6 +26,7 @@ func TestUpdateOptionMapUpdatesMonitorSettingRuntimeConfig(t *testing.T) {
 	})
 
 	updates := map[string]string{
+		"monitor_setting.auto_test_channel_recovery_enabled":   "true",
 		"monitor_setting.channel_failure_rate_disable_enabled": "true",
 		"monitor_setting.channel_failure_rate_window_minutes":  "7",
 		"monitor_setting.channel_failure_rate_threshold":       "42.5",
@@ -43,6 +44,7 @@ func TestUpdateOptionMapUpdatesMonitorSettingRuntimeConfig(t *testing.T) {
 	}
 
 	got := operation_setting.GetMonitorSetting()
+	require.True(t, got.AutoTestChannelRecoveryEnabled)
 	require.True(t, got.ChannelFailureRateDisableEnabled)
 	require.Equal(t, 7, got.ChannelFailureRateWindowMinutes)
 	require.Equal(t, 42.5, got.ChannelFailureRateThreshold)

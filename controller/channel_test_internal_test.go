@@ -7,6 +7,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/types"
@@ -104,4 +105,27 @@ func TestEvaluateAutomaticChannelTestResultMarksSlowResponseAsFailed(t *testing.
 	require.True(t, shouldBan)
 	require.NotNil(t, newAPIError)
 	require.Equal(t, types.ErrorCodeChannelResponseTimeExceeded, newAPIError.GetErrorCode())
+}
+
+func TestShouldTestChannelForChannelLevelRecoveryScope(t *testing.T) {
+	enabled := true
+	disabled := false
+	channel := &model.Channel{
+		Status: common.ChannelStatusAutoDisabled,
+	}
+
+	require.False(t, shouldTestChannelForScope(channel, automaticChannelTestScopeChannelLevelRecovery))
+
+	channel.SetSetting(dto.ChannelSettings{AutoRecoveryEnabled: &disabled})
+	require.False(t, shouldTestChannelForScope(channel, automaticChannelTestScopeChannelLevelRecovery))
+
+	channel.SetSetting(dto.ChannelSettings{AutoRecoveryEnabled: &enabled})
+	require.True(t, shouldTestChannelForScope(channel, automaticChannelTestScopeChannelLevelRecovery))
+
+	channel.Status = common.ChannelStatusEnabled
+	require.False(t, shouldTestChannelForScope(channel, automaticChannelTestScopeChannelLevelRecovery))
+
+	channel.Status = common.ChannelStatusAutoDisabled
+	channel.Archived = true
+	require.False(t, shouldTestChannelForScope(channel, automaticChannelTestScopeChannelLevelRecovery))
 }
